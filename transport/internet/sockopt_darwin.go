@@ -94,75 +94,68 @@ func OriginalDst(la, ra net.Addr) (net.IP, int, error) {
 	return odIP, int(net.PortFromBytes(odPort[:2])), nil
 }
 
-func applyOutboundSocketOptions(network string, address string, fd uintptr, config *SocketConfig) error {
+// direct: 0 - inbound; 1 - outbound;
+func applyBasicSocketOptions(network string, fd uintptr, config *SocketConfig, direction int) error {
+	if direction != 0 && direction != 1 {
+		return newError("Incorrect direction \"", direction, "\", neither inbound nor outbound!")
+	}
 	if isTCPSocket(network) {
 		tfo := config.ParseTFOValue()
-		if tfo > 0 {
-			tfo = TCP_FASTOPEN_CLIENT
+		// outbound
+		if direction == 1 {
+			if tfo > 0 {
+				tfo = TCP_FASTOPEN_CLIENT
+			}
+		} else { // inbound
+			if tfo > 0 {
+				tfo = TCP_FASTOPEN_SERVER
+			}
 		}
 		if tfo >= 0 {
 			if err := unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_FASTOPEN, tfo); err != nil {
 				return err
 			}
 		}
-
-		if config.TcpKeepAliveIdle > 0 || config.TcpKeepAliveInterval > 0 {
-			if config.TcpKeepAliveIdle > 0 {
-				if err := unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_KEEPALIVE, int(config.TcpKeepAliveInterval)); err != nil {
-					return newError("failed to set TCP_KEEPINTVL", err)
-				}
-			}
-			if config.TcpKeepAliveInterval > 0 {
-				if err := unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, sysTCP_KEEPINTVL, int(config.TcpKeepAliveIdle)); err != nil {
-					return newError("failed to set TCP_KEEPIDLE", err)
-				}
-			}
+		// set KEEPALIVE
+		if config.TcpKeepAliveIdle > 0 || config.TcpKeepAliveInterval > 0 || config.TcpKeepAliveCount > 0 {
+			// enable SO_KEEPALIVE
 			if err := unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_KEEPALIVE, 1); err != nil {
 				return newError("failed to set SO_KEEPALIVE", err)
 			}
-		} else if config.TcpKeepAliveInterval < 0 || config.TcpKeepAliveIdle < 0 {
+			// set TCP_KEEPALIVE (TCP keepalive idle time on Darwin)
+			if config.TcpKeepAliveIdle > 0 {
+				if err := unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_KEEPALIVE, int(config.TcpKeepAliveIdle)); err != nil {
+					return newError("failed to set TCP_KEEPALIVE (TCP keepalive idle time on Darwin)").Base(err)
+				}
+			}
+			// set TCP_KEEPINTVL
+			if config.TcpKeepAliveInterval > 0 {
+				if err := unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, sysTCP_KEEPINTVL, int(config.TcpKeepAliveInterval)); err != nil {
+					return newError("failed to set TCP_KEEPINTVL", err)
+				}
+			}
+			// set TCP_KEEPCNT
+			if config.TcpKeepAliveCount > 0 {
+				if err := unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_KEEPCNT, int(config.TcpKeepAliveCount)); err != nil {
+					return newError("failed to set TCP_KEEPCNT", err)
+				}
+			}
+		} else {
+			// disable SO_KEEPALIVE
 			if err := unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_KEEPALIVE, 0); err != nil {
 				return newError("failed to unset SO_KEEPALIVE", err)
 			}
 		}
+		return nil
 	}
+}
 
-	return nil
+func applyOutboundSocketOptions(network string, address string, fd uintptr, config *SocketConfig) error {
+	return applyBasicSocketOptions(network, fd, config, 1)
 }
 
 func applyInboundSocketOptions(network string, fd uintptr, config *SocketConfig) error {
-	if isTCPSocket(network) {
-		tfo := config.ParseTFOValue()
-		if tfo > 0 {
-			tfo = TCP_FASTOPEN_SERVER
-		}
-		if tfo >= 0 {
-			if err := unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_FASTOPEN, tfo); err != nil {
-				return err
-			}
-		}
-		if config.TcpKeepAliveIdle > 0 || config.TcpKeepAliveInterval > 0 {
-			if config.TcpKeepAliveIdle > 0 {
-				if err := unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_KEEPALIVE, int(config.TcpKeepAliveInterval)); err != nil {
-					return newError("failed to set TCP_KEEPINTVL", err)
-				}
-			}
-			if config.TcpKeepAliveInterval > 0 {
-				if err := unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, sysTCP_KEEPINTVL, int(config.TcpKeepAliveIdle)); err != nil {
-					return newError("failed to set TCP_KEEPIDLE", err)
-				}
-			}
-			if err := unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_KEEPALIVE, 1); err != nil {
-				return newError("failed to set SO_KEEPALIVE", err)
-			}
-		} else if config.TcpKeepAliveInterval < 0 || config.TcpKeepAliveIdle < 0 {
-			if err := unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_KEEPALIVE, 0); err != nil {
-				return newError("failed to unset SO_KEEPALIVE", err)
-			}
-		}
-	}
-
-	return nil
+	return applyBasicSocketOptions(network, fd, config, 0)
 }
 
 func bindAddr(fd uintptr, address []byte, port uint32) error {

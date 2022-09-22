@@ -533,6 +533,7 @@ type SocketConfig struct {
 	DialerProxy          string      `json:"dialerProxy"`
 	TCPKeepAliveInterval int32       `json:"tcpKeepAliveInterval"`
 	TCPKeepAliveIdle     int32       `json:"tcpKeepAliveIdle"`
+	TCPKeepAliveCount    int32       `json:"tcpKeepAliveCount"`
 }
 
 // Build implements Buildable.

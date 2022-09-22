@@ -123,44 +123,69 @@ func OriginalDst(la, ra net.Addr) (net.IP, int, error) {
 	return odIP, odPort, nil
 }
 
-func applyOutboundSocketOptions(network string, address string, fd uintptr, config *SocketConfig) error {
+// direct: 0 - inbound; 1 - outbound;
+func applyBasicSocketOptions(network string, fd uintptr, config *SocketConfig, direction int) error {
+	if direction != 0 && direction != 1 {
+		return newError("Incorrect direction \"", direction, "\", neither inbound nor outbound!")
+	}
 	if config.Mark != 0 {
 		if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_USER_COOKIE, int(config.Mark)); err != nil {
 			return newError("failed to set SO_USER_COOKIE").Base(err)
 		}
 	}
-
 	if isTCPSocket(network) {
 		tfo := config.ParseTFOValue()
-		if tfo > 0 {
-			tfo = 1
+		// outbound
+		if direction == 1 {
+			if tfo > 0 {
+				tfo = 1
+			}
+
 		}
 		if tfo >= 0 {
 			if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, unix.TCP_FASTOPEN, tfo); err != nil {
-				return newError("failed to set TCP_FASTOPEN_CONNECT=", tfo).Base(err)
+				return newError("failed to set TCP_FASTOPEN=", tfo).Base(err)
 			}
 		}
-		if config.TcpKeepAliveIdle > 0 || config.TcpKeepAliveInterval > 0 {
-			if config.TcpKeepAliveIdle > 0 {
-				if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_KEEPIDLE, int(config.TcpKeepAliveIdle)); err != nil {
-					return newError("failed to set TCP_KEEPIDLE", err)
-				}
+		// set SO_KEEPALIVE
+		if config.TcpKeepAliveInterval > 0 || config.TcpKeepAliveIdle > 0 || config.TcpKeepAliveCount > 0 {
+			// enable KEEPALIVE
+			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 1); err != nil {
+				return newError("failed to set SO_KEEPALIVE", err)
 			}
+			// set TCP_KEEPINTVL when TcpKeepAliveInterval is passitive. If we don't set it, it will work by default depending on OS.
 			if config.TcpKeepAliveInterval > 0 {
 				if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_KEEPINTVL, int(config.TcpKeepAliveInterval)); err != nil {
 					return newError("failed to set TCP_KEEPINTVL", err)
 				}
 			}
-			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 1); err != nil {
-				return newError("failed to set SO_KEEPALIVE", err)
+			// set TCP_KEEPIDLE when TcpKeepAliveIdle is passitive. If we don't set it, it will work by default depending on OS.
+			if config.TcpKeepAliveIdle > 0 {
+				if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_KEEPIDLE, int(config.TcpKeepAliveIdle)); err != nil {
+					return newError("failed to set TCP_KEEPIDLE", err)
+				}
 			}
-		} else if config.TcpKeepAliveInterval < 0 || config.TcpKeepAliveIdle < 0 {
+			// set TCP_KEEPCNT when TcpKeepAliveCount is passitive. If we don't set it, it will work by default depending on OS.
+			if config.TcpKeepAliveCount > 0 {
+				if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_KEEPCNT, int(config.TcpKeepAliveCount)); err != nil {
+					return newError("failed to set TCP_KEEPCNT", err)
+				}
+			}
+		} else {
+			// disable KEEPALIVE
 			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 0); err != nil {
 				return newError("failed to unset SO_KEEPALIVE", err)
 			}
 		}
 	}
+	return nil
+}
 
+func applyOutboundSocketOptions(network string, address string, fd uintptr, config *SocketConfig) error {
+	err := applyBasicSocketOptions(network, fd, config, 0)
+	if err != nil {
+		return err
+	}
 	if config.Tproxy.IsEnabled() {
 		ip, _, _ := net.SplitHostPort(address)
 		if net.ParseIP(ip).To4() != nil {
@@ -177,39 +202,10 @@ func applyOutboundSocketOptions(network string, address string, fd uintptr, conf
 }
 
 func applyInboundSocketOptions(network string, fd uintptr, config *SocketConfig) error {
-	if config.Mark != 0 {
-		if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_USER_COOKIE, int(config.Mark)); err != nil {
-			return newError("failed to set SO_USER_COOKIE").Base(err)
-		}
+	err := applyBasicSocketOptions(network, fd, config, 0)
+	if err != nil {
+		return err
 	}
-	if isTCPSocket(network) {
-		tfo := config.ParseTFOValue()
-		if tfo >= 0 {
-			if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, unix.TCP_FASTOPEN, tfo); err != nil {
-				return newError("failed to set TCP_FASTOPEN=", tfo).Base(err)
-			}
-		}
-		if config.TcpKeepAliveIdle > 0 || config.TcpKeepAliveInterval > 0 {
-			if config.TcpKeepAliveIdle > 0 {
-				if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_KEEPIDLE, int(config.TcpKeepAliveIdle)); err != nil {
-					return newError("failed to set TCP_KEEPIDLE", err)
-				}
-			}
-			if config.TcpKeepAliveInterval > 0 {
-				if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_KEEPINTVL, int(config.TcpKeepAliveInterval)); err != nil {
-					return newError("failed to set TCP_KEEPINTVL", err)
-				}
-			}
-			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 1); err != nil {
-				return newError("failed to set SO_KEEPALIVE", err)
-			}
-		} else if config.TcpKeepAliveInterval < 0 || config.TcpKeepAliveIdle < 0 {
-			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 0); err != nil {
-				return newError("failed to unset SO_KEEPALIVE", err)
-			}
-		}
-	}
-
 	if config.Tproxy.IsEnabled() {
 		if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IPV6, syscall.IPV6_BINDANY, 1); err != nil {
 			if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_BINDANY, 1); err != nil {
@@ -217,7 +213,6 @@ func applyInboundSocketOptions(network string, fd uintptr, config *SocketConfig)
 			}
 		}
 	}
-
 	return nil
 }
 
