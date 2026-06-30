@@ -55,6 +55,7 @@ func (c *Config) GetREALITYConfig() *reality.Config {
 	for _, shortId := range c.ShortIds {
 		config.ShortIds[*(*[8]byte)(shortId)] = true
 	}
+	config.CompileServerNamePatterns()
 	return config
 }
 
