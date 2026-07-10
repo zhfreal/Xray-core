@@ -39,3 +39,10 @@ When updating upstream REALITY or merging newer changes:
 4. Calculate the new pseudo-version of the commit using the format:
    `v0.0.0-YYYYMMDDHHMMSS-12charhash`
 5. Update `Xray-core-mine/go.mod`'s `require` section and `replace` directive to point to the new remote pseudo-version, then run `go mod tidy` and test compilation.
+
+### 3. Xmux TCP Connection Leak Fix (`transport/internet/splithttp/client.go`)
+* Updated `DefaultDialerClient.Close()` to invoke `tr.CloseIdleConnections()` on the internal HTTP transport. When an `XmuxClient` reaches its `cMaxReuseTimes` limit, it is cleanly retired and closed. This fix ensures that Go immediately drops the idle HTTP/2 connection on the client side rather than indefinitely holding it in the `ESTABLISHED` state until the remote server's timeout drops it.
+
+### 4. Protobuf Copylocks Warning Fix (`transport/internet/splithttp/dialer.go` & `mux.go` & `mux_test.go`)
+* Changed `XmuxManager` and related functions to accept `XmuxConfig` by pointer (`*XmuxConfig`) rather than by value (`XmuxConfig`). `XmuxConfig` is a Protobuf-generated struct containing an internal `sync.Mutex`; passing it by value caused `go vet` copylocks warnings and incorrect lock state duplication.
+* Updated the `splithttp` testing suite (`mux_test.go`) to pass `&xmuxConfig` pointers to `NewXmuxManager`, fixing compilation errors caused by the pointer refactoring.
