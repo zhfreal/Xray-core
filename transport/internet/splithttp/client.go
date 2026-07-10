@@ -183,6 +183,9 @@ func (c *DefaultDialerClient) Close() error {
 	if h3Transport, ok := transport.(*http3.Transport); ok {
 		h3Transport.Close()
 	}
+	if tr, ok := transport.(interface{ CloseIdleConnections() }); ok {
+		tr.CloseIdleConnections()
+	}
 	return nil
 }
 
