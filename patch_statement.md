@@ -8,7 +8,7 @@ This document details the modifications applied to the custom `Xray-core` codeba
 * **Base Upstream Version**: Tag `v26.6.27`
 * **Fork Repository**: `github.com/zhfreal/Xray-core`
 * **Development Branch**: `xray-wildcard-patches`
-* **Latest Local Patch Commit**: `cf129c88` (will be updated after committing current changes)
+* **Latest Local Patch Commit**: `44a14a51`
 
 ---
 
