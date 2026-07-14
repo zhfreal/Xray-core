@@ -16,7 +16,6 @@ import (
 	"github.com/xtls/xray-core/common/errors"
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/ocsp"
-	"github.com/xtls/xray-core/common/platform/filesystem"
 	"github.com/xtls/xray-core/common/protocol/tls/cert"
 	"github.com/xtls/xray-core/transport/internet"
 )
@@ -52,30 +51,31 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 		if entry.Usage != Certificate_ENCIPHERMENT {
 			continue
 		}
-		getX509KeyPair := func() *tls.Certificate {
-			keyPair, err := tls.X509KeyPair(entry.Certificate, entry.Key)
-			if err != nil {
-				errors.LogWarningInner(context.Background(), err, "ignoring invalid X509 key pair")
-				return nil
+		
+		cacheKey := getCertCacheKey(entry)
+		var keyPair *tls.Certificate
+		if val, ok := globalCertCache.Load(cacheKey); ok {
+			keyPair = val.(*tls.Certificate)
+		} else {
+			keyPair = getX509KeyPair(entry.Certificate, entry.Key)
+			if keyPair != nil {
+				globalCertCache.Store(cacheKey, keyPair)
 			}
-			keyPair.Leaf, err = x509.ParseCertificate(keyPair.Certificate[0])
-			if err != nil {
-				errors.LogWarningInner(context.Background(), err, "ignoring invalid certificate")
-				return nil
-			}
-			return &keyPair
 		}
-		if keyPair := getX509KeyPair(); keyPair != nil {
+
+		if keyPair != nil {
 			certs = append(certs, keyPair)
 		} else {
 			continue
 		}
+		
 		index := len(certs) - 1
 		setupOcspTicker(entry, func(isReloaded, isOcspstapling bool) {
 			cert := certs[index]
 			if isReloaded {
-				if newKeyPair := getX509KeyPair(); newKeyPair != nil {
+				if newKeyPair := getX509KeyPair(entry.Certificate, entry.Key); newKeyPair != nil {
 					cert = newKeyPair
+					globalCertCache.Store(cacheKey, newKeyPair)
 				} else {
 					return
 				}
@@ -93,42 +93,6 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 	return certs
 }
 
-func setupOcspTicker(entry *Certificate, callback func(isReloaded, isOcspstapling bool)) {
-	go func() {
-		if entry.OneTimeLoading {
-			return
-		}
-		var isOcspstapling bool
-		hotReloadCertInterval := uint64(3600)
-		if entry.OcspStapling != 0 {
-			hotReloadCertInterval = entry.OcspStapling
-			isOcspstapling = true
-		}
-		t := time.NewTicker(time.Duration(hotReloadCertInterval) * time.Second)
-		for {
-			var isReloaded bool
-			if entry.CertificatePath != "" && entry.KeyPath != "" {
-				newCert, err := filesystem.ReadCert(entry.CertificatePath)
-				if err != nil {
-					errors.LogErrorInner(context.Background(), err, "failed to parse certificate")
-					return
-				}
-				newKey, err := filesystem.ReadCert(entry.KeyPath)
-				if err != nil {
-					errors.LogErrorInner(context.Background(), err, "failed to parse key")
-					return
-				}
-				if string(newCert) != string(entry.Certificate) || string(newKey) != string(entry.Key) {
-					entry.Certificate = newCert
-					entry.Key = newKey
-					isReloaded = true
-				}
-			}
-			callback(isReloaded, isOcspstapling)
-			<-t.C
-		}
-	}()
-}
 
 func isCertificateExpired(c *tls.Certificate) bool {
 	if c.Leaf == nil && len(c.Certificate) > 0 {
