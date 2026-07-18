@@ -51,7 +51,7 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 		if entry.Usage != Certificate_ENCIPHERMENT {
 			continue
 		}
-		
+
 		cacheKey := getCertCacheKey(entry)
 		var keyPair *tls.Certificate
 		if val, ok := globalCertCache.Load(cacheKey); ok {
@@ -68,7 +68,7 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 		} else {
 			continue
 		}
-		
+
 		index := len(certs) - 1
 		setupOcspTicker(entry, func(isReloaded, isOcspstapling bool) {
 			cert := certs[index]
@@ -92,7 +92,6 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 	}
 	return certs
 }
-
 
 func isCertificateExpired(c *tls.Certificate) bool {
 	if c.Leaf == nil && len(c.Certificate) > 0 {
