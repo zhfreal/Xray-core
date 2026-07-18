@@ -43,6 +43,142 @@ This document details the modifications applied to the custom `Xray-core` codeba
   - Refactored `BuildCertificates()` in `config.go` to pull from this cache, preventing duplicate parsing of X.509 chains across multiple inbounds.
   - Extracted and refactored `setupOcspTicker` into `ocsp_ticker.go` using a global `sync.Map` (`globalOcspTickerMap`). This ensures only a single background goroutine and file watcher is launched per unique certificate file pair. The single goroutine broadcasts file changes to all registered inbounds' callbacks, eliminating goroutine leaks and redundant disk I/O.
 
+### 6. sing-mux Multiplexing Support (`common/singmux/`, `app/proxyman/config.proto`, `app/proxyman/outbound/handler.go`, `app/proxyman/inbound/always.go`, `infra/conf/xray.go`)
+* **Problem**: Lack of compatibility with `mihomo` (clash.meta) and `sing-box` configurations that utilize `sing-mux` for multiplexing over standard outbound connections.
+* **Solution**:
+  - Integrated `github.com/metacubex/sing-mux v0.3.10` dependency.
+  - Extended `MultiplexingConfig` protobuf definition with `protocol` (supporting `smux`, `yamux`, `h2mux`), padding, max/min stream settings, and TCP Brutal options.
+  - Updated JSON parsing in `infra/conf/xray.go` to support these options in the configuration files.
+  - Created a bridge adapter package `common/singmux` to translate Xray's `transport.Link` pipes to `net.Conn` and `N.PacketConn` required by the `sing-mux` client and server.
+  - **Synchronous Lifecycle Blocking**: Implemented blocking behavior in the client-side `Dispatch` and server-side `NewConnection`/`NewPacketConnection` copy loops to prevent premature stream and client TCP socket closures.
+  - Updated `AlwaysOnInboundHandler` on the server side to use a unified `singmux.Server` that intercepts sing-mux target FQDN requests (`sp.mux.sing-box.arpa`) and routes parsed streams back to Xray dispatcher.
+  - Updated outbound `Handler` on the client side to initialize `singmux.SingMuxClientManager` and multiplex client requests onto sing-mux streams when configured.
+
+### 7. User Configuration & Environment Guide
+
+To enable `sing-mux` compatibility between Xray and Mihomo, configurations should be updated as detailed below.
+
+#### A. Xray Server Config (`xray_server.json`)
+The server's inbound block is standard. The server automatically detects `sing-mux` requests aimed at the virtual domain `sp.mux.sing-box.arpa`:
+```json
+{
+  "inbounds": [
+    {
+      "port": 23001,
+      "listen": "127.0.0.1",
+      "protocol": "vless",
+      "settings": {
+        "clients": [{ "id": "c4af696b-177e-4ad5-9af1-3632df9d31f6" }],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "show": true,
+          "dest": "127.0.0.1:23456",
+          "serverNames": ["localhost"],
+          "privateKey": "kDfIzEiK9FJfLzpj8j4ID87L6IvilQswQJDezHeSEks",
+          "shortIds": ["0123456789abcdef"]
+        }
+      }
+    }
+  ]
+}
+```
+
+#### B. Mihomo Server Config (`mihomo_server.yaml`)
+Mihomo's server configuration enables `sing-mux` packet padding:
+```yaml
+listeners:
+  - name: vless-in
+    type: vless
+    port: 23001
+    listen: 127.0.0.1
+    users:
+      - uuid: c4af696b-177e-4ad5-9af1-3632df9d31f6
+    reality-config:
+      dest: 127.0.0.1:23456
+      private-key: kDfIzEiK9FJfLzpj8j4ID87L6IvilQswQJDezHeSEks
+      short-id: [ "0123456789abcdef" ]
+      server-names: [ "localhost" ]
+    mux-option:
+      padding: true
+```
+
+#### C. Xray Client Config (`xray_client.json`)
+The client enables `sing-mux` by specifying the `protocol` and setting `enabled: true` in the `mux` block of the outbound settings.
+
+##### JSON Structure:
+```json
+{
+  "outbounds": [
+    {
+      "protocol": "vless",
+      "settings": {
+        "vnext": [{
+          "address": "127.0.0.1",
+          "port": 23001,
+          "users": [{ "id": "c4af696b-177e-4ad5-9af1-3632df9d31f6", "encryption": "none" }]
+        }]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "localhost",
+          "publicKey": "b89nCxXUcNsPrT5pGtEsrZJ5CQxIoA11_wbrart7_UQ",
+          "shortId": "0123456789abcdef"
+        }
+      },
+      "mux": {
+        "enabled": true,
+        "protocol": "smux",       // Supports: "smux", "yamux", "h2mux"
+        "maxConnections": 4,      // Max concurrent physical TCP connections for multiplexing
+        "minStreams": 2,          // Min streams per connection before dialing a new connection
+        "maxStreams": 10,         // Max multiplexed streams per connection (0 for unlimited)
+        "padding": true,          // Enable sing-mux protocol padding to obfuscate traffic
+        "brutal": false,          // Enable TCP Brutal congestion control protocol
+        "brutalUp": "10 Mbps",    // Upload bandwidth limit for TCP Brutal
+        "brutalDown": "20 Mbps"   // Download bandwidth limit for TCP Brutal
+      }
+    }
+  ]
+}
+```
+
+##### Field Descriptions:
+* **`protocol`**: Specifies the multiplexing protocol. Must be `"smux"`, `"yamux"`, or `"h2mux"` to activate `sing-mux`. If set to `"mux"` or omitted, legacy `v2ray-mux` is used.
+* **`maxConnections`**: The maximum number of concurrent physical TCP connections that `sing-mux` will maintain.
+* **`minStreams`**: The minimum number of active streams before `sing-mux` allocates another physical connection.
+* **`maxStreams`**: The maximum number of multiplexed logical streams per physical connection.
+* **`padding`**: Enables padding at the `sing-mux` protocol layer for anti-censorship.
+* **`brutal`**: Controls userspace-assisted congestion control (TCP Brutal).
+* **`brutalUp` / `brutalDown`**: Rate limit strings (e.g. `"10 Mbps"`, `"20 Mbps"`, or raw numbers representing Mbps) mapping to upload and download bandwidth limits for TCP Brutal.
+* **`concurrency`**: Omitted or ignored. The legacy `concurrency` field is not used when `protocol` is set to a `sing-mux` protocol.
+
+#### D. Mihomo Client Config (`mihomo_client.yaml`)
+Mihomo enables multiplexing via the `smux` block inside the proxy definitions:
+```yaml
+proxies:
+  - name: "vless-reality-singmux"
+    type: vless
+    server: 127.0.0.1
+    port: 23001
+    uuid: c4af696b-177e-4ad5-9af1-3632df9d31f6
+    tls: true
+    servername: localhost
+    reality-opts:
+      public-key: b89nCxXUcNsPrT5pGtEsrZJ5CQxIoA11_wbrart7_UQ
+      short-id: 0123456789abcdef
+    client-fingerprint: chrome
+    smux:
+      enabled: true
+      protocol: smux              # Supports: "smux", "yamux", "h2mux"
+      max-streams: 10
+      min-streams: 2
+```
+
 ---
 
 ## Guidelines for Upstream Maintenance & Updates
