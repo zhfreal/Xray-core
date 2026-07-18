@@ -11,6 +11,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/klauspost/cpuid/v2 v2.4.0
+	github.com/metacubex/sing v0.5.7
+	github.com/metacubex/sing-mux v0.3.10
 	github.com/miekg/dns v1.1.72
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pion/stun/v3 v3.1.6
@@ -45,8 +47,6 @@ require (
 	github.com/juju/ratelimit v1.0.2 // indirect
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/kr/text v0.2.0 // indirect
-	github.com/metacubex/sing v0.5.7 // indirect
-	github.com/metacubex/sing-mux v0.3.10 // indirect
 	github.com/metacubex/smux v0.0.0-20250503055512-501391591dee // indirect
 	github.com/metacubex/yamux v0.0.0-20250918083631-dd5f17c0be49 // indirect
 	github.com/pion/dtls/v3 v3.1.4 // indirect
