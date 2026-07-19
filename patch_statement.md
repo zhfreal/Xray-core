@@ -179,6 +179,12 @@ proxies:
       min-streams: 2
 ```
 
+### 8. Adaptive sing-mux Padding & TCP Brutal (`common/singmux/server.go`)
+* **Problem**: Previously, `sing-mux` server options for padding and TCP Brutal were statically bound. This caused protocol version mismatches (dropping clients that requested padding) and prevented clients from dynamically negotiating TCP Brutal speeds.
+* **Solution**:
+  - Set `Padding: false` in `mux.ServiceOptions`. In `sing-mux`, this activates permissive mode, allowing the server to dynamically accept both `Version0` (unpadded) and `Version1` (padded) clients on the fly without conflicts.
+  - Enabled `Brutal` globally (`Enabled: true`) with an environment-variable-driven maximum speed cap (`SMUX_BRUTAL_CAP_MBPS`, defaulting to 100 Mbps). This allows well-behaved clients to dictate their speed adaptively up to the cap, while protecting the server against greedy clients requesting unlimited bandwidth.
+
 ---
 
 ## Guidelines for Upstream Maintenance & Updates
