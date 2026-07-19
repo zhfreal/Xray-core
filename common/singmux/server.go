@@ -3,6 +3,8 @@ package singmux
 import (
 	"context"
 	"net"
+	"os"
+	"strconv"
 	"sync"
 
 	"github.com/metacubex/sing-mux"
@@ -26,6 +28,17 @@ type Server struct {
 	singMux  *mux.Service
 }
 
+// getBrutalCapBPS reads the SMUX_BRUTAL_CAP_MBPS environment variable.
+// If unset or invalid, it defaults to 100 Mbps (12,500,000 Bytes Per Second).
+func getBrutalCapBPS() uint64 {
+	if capStr := os.Getenv("SMUX_BRUTAL_CAP_MBPS"); capStr != "" {
+		if capMbps, err := strconv.ParseUint(capStr, 10, 64); err == nil {
+			return capMbps * 1000 * 1000 / 8
+		}
+	}
+	return 12500000 // 100 Mbps Default
+}
+
 func NewServer(ctx context.Context, dispatcher routing.Dispatcher) (*Server, error) {
 	v2rayMux := xraymux.NewServer(ctx)
 
@@ -44,6 +57,11 @@ func NewServer(ctx context.Context, dispatcher routing.Dispatcher) (*Server, err
 		Logger:  &xrayLogger{},
 		Handler: handler,
 		Padding: false,
+		Brutal: mux.BrutalOptions{
+			Enabled:    true,
+			SendBPS:    getBrutalCapBPS(),
+			ReceiveBPS: getBrutalCapBPS(),
+		},
 	})
 	if err != nil {
 		return nil, err
