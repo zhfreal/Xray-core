@@ -12,7 +12,9 @@ import (
 	singbuf "github.com/metacubex/sing/common/buf"
 	M "github.com/metacubex/sing/common/metadata"
 	N "github.com/metacubex/sing/common/network"
+	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/transport/internet/stat"
 	"github.com/xtls/xray-core/common/buf"
 	"github.com/xtls/xray-core/common/errors"
 	xraynet "github.com/xtls/xray-core/common/net"
@@ -40,16 +42,17 @@ func getBrutalCapBPS() uint64 {
 	return 12500000 // 100 Mbps Default
 }
 
-func NewServer(ctx context.Context, dispatcher routing.Dispatcher) (*Server, error) {
+func NewServer(ctx context.Context) (*Server, error) {
 	v2rayMux := xraymux.NewServer(ctx)
 
 	s := &Server{
 		v2rayMux: v2rayMux,
 	}
 
-	handler := &serviceHandler{
-		dispatcher: dispatcher,
-	}
+	handler := &serviceHandler{}
+	core.RequireFeatures(ctx, func(d routing.Dispatcher) {
+		handler.dispatcher = d
+	})
 
 	singMux, err := mux.NewService(mux.ServiceOptions{
 		NewStreamContext: func(ctx context.Context, conn net.Conn) context.Context {
@@ -319,7 +322,9 @@ func getSyscallConn(ctx context.Context) syscall.Conn {
 		if sc, ok := c.(syscall.Conn); ok {
 			return sc
 		}
-		if wrapper, ok := c.(interface{ NetConn() net.Conn }); ok {
+		if counterConn, ok := c.(*stat.CounterConnection); ok {
+			c = counterConn.Connection
+		} else if wrapper, ok := c.(interface{ NetConn() net.Conn }); ok {
 			c = wrapper.NetConn()
 		} else if wrapper, ok := c.(interface{ Upstream() any }); ok {
 			if up, ok := wrapper.Upstream().(net.Conn); ok {
