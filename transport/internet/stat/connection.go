@@ -43,10 +43,4 @@ func TryUnwrapStatsConn(conn net.Conn) net.Conn {
 	return conn
 }
 
-func (c *CounterConnection) Upstream() any {
-	return c.Connection
-}
 
-func (c *CounterConnection) NetConn() net.Conn {
-	return c.Connection
-}
