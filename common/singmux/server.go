@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"syscall"
 
 	"github.com/metacubex/sing-mux"
 	singbuf "github.com/metacubex/sing/common/buf"
@@ -83,13 +84,14 @@ func (s *Server) Dispatch(ctx context.Context, dest xraynet.Destination) (*trans
 				cnc.ConnectionInputMulti(downlinkWriter),
 				cnc.ConnectionOutputMulti(uplinkReader),
 			)
+			wrappedConn := wrapBrutalConn(ctx, conn)
 
 			metadata := M.Metadata{
 				Destination: M.ParseSocksaddrHostPort(domain, uint16(dest.Port)),
 			}
 
 			go func() {
-				if err := s.singMux.NewConnection(ctx, conn, metadata); err != nil {
+				if err := s.singMux.NewConnection(ctx, wrappedConn, metadata); err != nil {
 					errors.LogInfoInner(ctx, err, "sing-mux connection handler failed")
 				}
 			}()
@@ -109,12 +111,13 @@ func (s *Server) DispatchLink(ctx context.Context, dest xraynet.Destination, lin
 				cnc.ConnectionInputMulti(link.Writer),
 				cnc.ConnectionOutputMulti(link.Reader),
 			)
+			wrappedConn := wrapBrutalConn(ctx, conn)
 
 			metadata := M.Metadata{
 				Destination: M.ParseSocksaddrHostPort(domain, uint16(dest.Port)),
 			}
 
-			return s.singMux.NewConnection(ctx, conn, metadata)
+			return s.singMux.NewConnection(ctx, wrappedConn, metadata)
 		}
 	}
 
@@ -304,4 +307,52 @@ func (l *xrayLogger) PanicContext(ctx context.Context, common ...interface{}) {
 
 func (l *xrayLogger) TraceContext(ctx context.Context, common ...interface{}) {
 	errors.LogDebug(ctx, common...)
+}
+
+func getSyscallConn(ctx context.Context) syscall.Conn {
+	inbound := session.InboundFromContext(ctx)
+	if inbound == nil || inbound.Conn == nil {
+		return nil
+	}
+	var c net.Conn = inbound.Conn
+	for c != nil {
+		if sc, ok := c.(syscall.Conn); ok {
+			return sc
+		}
+		if wrapper, ok := c.(interface{ NetConn() net.Conn }); ok {
+			c = wrapper.NetConn()
+		} else if wrapper, ok := c.(interface{ Upstream() any }); ok {
+			if up, ok := wrapper.Upstream().(net.Conn); ok {
+				c = up
+			} else {
+				break
+			}
+		} else {
+			break
+		}
+	}
+	return nil
+}
+
+type brutalConn struct {
+	net.Conn
+	sc syscall.Conn
+}
+
+func (c *brutalConn) SyscallConn() (syscall.RawConn, error) {
+	if c.sc != nil {
+		return c.sc.SyscallConn()
+	}
+	return nil, os.ErrInvalid
+}
+
+func wrapBrutalConn(ctx context.Context, conn net.Conn) net.Conn {
+	sc := getSyscallConn(ctx)
+	if sc != nil {
+		return &brutalConn{
+			Conn: conn,
+			sc:   sc,
+		}
+	}
+	return conn
 }
