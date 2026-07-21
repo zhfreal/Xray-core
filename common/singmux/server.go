@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/metacubex/sing-mux"
@@ -94,6 +96,8 @@ func (s *Server) Dispatch(ctx context.Context, dest xraynet.Destination) (*trans
 			}
 
 			go func() {
+				defer common.Close(downlinkWriter)
+				defer common.Close(uplinkReader)
 				if err := s.singMux.NewConnection(ctx, wrappedConn, metadata); err != nil {
 					errors.LogInfoInner(ctx, err, "sing-mux connection handler failed")
 				}
@@ -160,15 +164,13 @@ func (h *serviceHandler) NewConnection(ctx context.Context, conn net.Conn, metad
 	}
 
 	// Block synchronously here to prevent sing-mux from closing the underlay stream when NewConnection returns.
-	defer conn.Close()
-	defer common.Close(link.Writer)
-	defer common.Interrupt(link.Reader)
-
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
+		defer closeReader(link.Reader)
+		defer conn.Close()
 		err := buf.Copy(buf.NewReader(conn), link.Writer)
 		if err != nil {
 			errors.LogInfo(context.Background(), "sing-mux copy client to target err: ", err)
@@ -177,6 +179,8 @@ func (h *serviceHandler) NewConnection(ctx context.Context, conn net.Conn, metad
 
 	go func() {
 		defer wg.Done()
+		defer common.Close(link.Writer)
+		defer conn.Close()
 		err := buf.Copy(link.Reader, buf.NewWriter(conn))
 		if err != nil {
 			errors.LogInfo(context.Background(), "sing-mux copy target to client err: ", err)
@@ -344,11 +348,49 @@ type brutalConn struct {
 	sc syscall.Conn
 }
 
+func isControlCaller() bool {
+	var pcs [10]uintptr
+	n := runtime.Callers(2, pcs[:])
+	frames := runtime.CallersFrames(pcs[:n])
+	for {
+		frame, more := frames.Next()
+		if strings.Contains(frame.Function, "github.com/metacubex/sing/common/control") {
+			return true
+		}
+		if !more {
+			break
+		}
+	}
+	return false
+}
+
 func (c *brutalConn) SyscallConn() (syscall.RawConn, error) {
-	if c.sc != nil {
+	var pcs [10]uintptr
+	n := runtime.Callers(2, pcs[:])
+	frames := runtime.CallersFrames(pcs[:n])
+	var caller string
+	for {
+		frame, more := frames.Next()
+		caller += " -> " + frame.Function
+		if !more {
+			break
+		}
+	}
+	res := c.sc != nil && isControlCaller()
+	errors.LogWarning(context.Background(), "SyscallConn called by: ", caller, " | returning rawConn: ", res)
+	if res {
 		return c.sc.SyscallConn()
 	}
 	return nil, os.ErrInvalid
+}
+
+func (c *brutalConn) WriteVectorised(buffers []*singbuf.Buffer) error {
+	for _, b := range buffers {
+		if _, err := c.Conn.Write(b.Bytes()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func wrapBrutalConn(ctx context.Context, conn net.Conn) net.Conn {
@@ -361,3 +403,4 @@ func wrapBrutalConn(ctx context.Context, conn net.Conn) net.Conn {
 	}
 	return conn
 }
+

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"sync"
 	"time"
 
@@ -112,6 +113,74 @@ func (i *ServerInstance) Close() (err error) {
 	i.Closed = true
 	i.RWLock.Unlock()
 	return
+}
+
+func flushConn(conn net.Conn) {
+	for conn != nil {
+		if flusher, ok := conn.(interface{ Flush() error }); ok {
+			_ = flusher.Flush()
+		}
+		v := reflect.ValueOf(conn)
+		if v.Kind() == reflect.Ptr {
+			v = v.Elem()
+		}
+		if v.Kind() != reflect.Struct {
+			break
+		}
+		var next net.Conn
+		if mc := reflect.ValueOf(conn).MethodByName("NetConn"); mc.IsValid() {
+			res := mc.Call(nil)
+			if len(res) == 1 {
+				next, _ = res[0].Interface().(net.Conn)
+			}
+		}
+		if next == nil {
+			if f := v.FieldByName("Connection"); f.IsValid() {
+				next, _ = f.Interface().(net.Conn)
+			}
+		}
+		if next == conn || next == nil {
+			break
+		}
+		conn = next
+	}
+}
+
+func unwrapConn(conn net.Conn) net.Conn {
+	fmt.Printf("DEBUG unwrapConn start: %T\n", conn)
+	for conn != nil {
+		v := reflect.ValueOf(conn)
+		if v.Kind() == reflect.Ptr {
+			v = v.Elem()
+		}
+		if v.Kind() != reflect.Struct {
+			fmt.Printf("DEBUG unwrapConn not struct: %s\n", v.Kind().String())
+			break
+		}
+		if mc := reflect.ValueOf(conn).MethodByName("NetConn"); mc.IsValid() {
+			fmt.Printf("DEBUG unwrapConn found NetConn method\n")
+			res := mc.Call(nil)
+			if len(res) == 1 {
+				if next, ok := res[0].Interface().(net.Conn); ok {
+					fmt.Printf("DEBUG unwrapConn next from NetConn: %T\n", next)
+					conn = next
+					continue
+				}
+			}
+		}
+		if f := v.FieldByName("Connection"); f.IsValid() {
+			fmt.Printf("DEBUG unwrapConn found Connection field\n")
+			if next, ok := f.Interface().(net.Conn); ok {
+				fmt.Printf("DEBUG unwrapConn next from Connection field: %T\n", next)
+				conn = next
+				continue
+			}
+		}
+		fmt.Printf("DEBUG unwrapConn no matches, breaking\n")
+		break
+	}
+	fmt.Printf("DEBUG unwrapConn end: %T\n", conn)
+	return conn
 }
 
 func (i *ServerInstance) Handshake(conn net.Conn, fallback *[]byte) (*CommonConn, error) {
@@ -218,6 +287,7 @@ func (i *ServerInstance) Handshake(conn net.Conn, fallback *[]byte) (*CommonConn
 				_, err = DecodeHeader(noises)
 			}
 			conn.Write(noises) // make client do new handshake
+			time.Sleep(100 * time.Millisecond)
 			return nil, errors.New("expired ticket")
 		}
 		if _, loaded := s.NfsKeys.LoadOrStore([32]byte(nfsKey), true); loaded { // prevents bad client also

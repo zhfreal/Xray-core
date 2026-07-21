@@ -193,6 +193,15 @@ proxies:
 
 ---
 
+### 10. Remote sing-mux Dependency & Reconnect Patch
+* **Problem**: When a multiplexed connection retry occurred in Xray/Mihomo client (due to a Reality session ticket expiration after server reboot), the `clientConn` wrapper dynamically swapped the underlying stream. However, the connection copy loop (`bufio.Copy`) recursively unwrapped the connection via `Upstream() any` and kept referencing the old, closed stream object directly, leading to write failures and connection crashes.
+* **Solution**:
+  - Forked `metacubex/sing-mux` to `zhfreal/sing-mux` using `gh`.
+  - Switched the `github.com/metacubex/sing-mux` dependency from a local directory to the remote fork repository and tag `github.com/zhfreal/sing-mux v0.3.10-patch` in `go.mod`.
+  - Removed `Upstream()` on the `clientConn` wrapper class inside `sing-mux` to prevent copy loops from bypassing the wrapper, ensuring transparent re-routing of packets to the active retried stream.
+
+---
+
 ## Guidelines for Upstream Maintenance & Updates
 
 When updating upstream REALITY or merging newer changes:
@@ -202,3 +211,4 @@ When updating upstream REALITY or merging newer changes:
 4. Calculate the new pseudo-version of the commit using the format:
    `v0.0.0-YYYYMMDDHHMMSS-12charhash`
 5. Update `Xray-core-mine/go.mod`'s `replace` directive to point to the new remote pseudo-version, then run `go mod tidy` and test compilation.
+
