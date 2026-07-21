@@ -133,6 +133,9 @@ The client enables `sing-mux` by specifying the `protocol` and setting `enabled:
       },
       "mux": {
         "enabled": true,
+        "concurrency": 8,         // Max concurrent streams legacy v2ray-mux can handle (or ignored when using sing-mux)
+        "xudpConcurrency": 8,     // Max concurrent XUDP streams in another mux
+        "xudpProxyUDP443": "reject", // UDP 443 proxy policy: reject, allow, or skip
         "protocol": "smux",       // Supports: "smux", "yamux", "h2mux"
         "maxConnections": 4,      // Max concurrent physical TCP connections for multiplexing
         "minStreams": 2,          // Min streams per connection before dialing a new connection
@@ -148,6 +151,9 @@ The client enables `sing-mux` by specifying the `protocol` and setting `enabled:
 ```
 
 ##### Field Descriptions:
+* **`concurrency`**: Used by legacy `v2ray-mux`. Specifies the maximum concurrent streams per TCP connection. (Ignored when `protocol` is a `sing-mux` protocol).
+* **`xudpConcurrency`**: Specifies the concurrency setting for proxying XUDP over Mux connections.
+* **`xudpProxyUDP443`**: The policy for proxying UDP traffic targeting port 443 (QUIC/HTTP3). Can be `"reject"`, `"allow"`, or `"skip"`.
 * **`protocol`**: Specifies the multiplexing protocol. Must be `"smux"`, `"yamux"`, or `"h2mux"` to activate `sing-mux`. If set to `"mux"` or omitted, legacy `v2ray-mux` is used.
 * **`maxConnections`**: The maximum number of concurrent physical TCP connections that `sing-mux` will maintain.
 * **`minStreams`**: The minimum number of active streams before `sing-mux` allocates another physical connection.
@@ -155,7 +161,6 @@ The client enables `sing-mux` by specifying the `protocol` and setting `enabled:
 * **`padding`**: Enables padding at the `sing-mux` protocol layer for anti-censorship.
 * **`brutal`**: Controls userspace-assisted congestion control (TCP Brutal).
 * **`brutalUp` / `brutalDown`**: Rate limit strings (e.g. `"10 Mbps"`, `"20 Mbps"`, or raw numbers representing Mbps) mapping to upload and download bandwidth limits for TCP Brutal.
-* **`concurrency`**: Omitted or ignored. The legacy `concurrency` field is not used when `protocol` is set to a `sing-mux` protocol.
 
 #### D. Mihomo Client Config (`mihomo_client.yaml`)
 Mihomo enables multiplexing via the `smux` block inside the proxy definitions:
