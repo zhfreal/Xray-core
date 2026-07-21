@@ -159,8 +159,12 @@ The client enables `sing-mux` by specifying the `protocol` and setting `enabled:
 * **`minStreams`**: The minimum number of active streams before `sing-mux` allocates another physical connection.
 * **`maxStreams`**: The maximum number of multiplexed logical streams per physical connection.
 * **`padding`**: Enables padding at the `sing-mux` protocol layer for anti-censorship.
-* **`brutal`**: Controls userspace-assisted congestion control (TCP Brutal).
 * **`brutalUp` / `brutalDown`**: Rate limit strings (e.g. `"10 Mbps"`, `"20 Mbps"`, or raw numbers representing Mbps) mapping to upload and download bandwidth limits for TCP Brutal.
+
+##### How to use legacy `v2ray-mux` instead of `sing-mux`:
+- To select the original, legacy `v2ray-mux` protocol, configure `"protocol": "mux"` (or omit the `protocol` key entirely) and set `"enabled": true`.
+- In legacy mode, `concurrency` specifies the maximum concurrent streams per TCP connection (defaults to `8` if concurrency is set to `0`).
+- Setting `concurrency` to `< 0` (e.g., `-1`) completely disables all multiplexing (both legacy and sing-mux).
 
 #### D. Mihomo Client Config (`mihomo_client.yaml`)
 Mihomo enables multiplexing via the `smux` block inside the proxy definitions:
