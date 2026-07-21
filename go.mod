@@ -47,7 +47,7 @@ require (
 	github.com/juju/ratelimit v1.0.2 // indirect
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/kr/text v0.2.0 // indirect
-	github.com/metacubex/smux v0.0.0-20250503055512-501391591dee // indirect
+	github.com/metacubex/smux v0.0.0-20260105030934-d0c8756d3141 // indirect
 	github.com/metacubex/yamux v0.0.0-20250918083631-dd5f17c0be49 // indirect
 	github.com/pion/dtls/v3 v3.1.4 // indirect
 	github.com/pion/logging v0.2.4 // indirect
@@ -66,3 +66,5 @@ require (
 )
 
 replace github.com/xtls/reality => github.com/zhfreal/REALITY v0.0.0-20260714042340-a575bb6dce30
+
+replace github.com/metacubex/sing-mux => github.com/zhfreal/sing-mux v0.3.10-patch

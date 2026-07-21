@@ -3,6 +3,7 @@ package singmux
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"regexp"
 	"strconv"
@@ -40,6 +41,8 @@ func (d *singDialer) DialContext(ctx context.Context, network string, destinatio
 		pCtx := session.ContextWithOutbounds(context.Background(), outbounds)
 		pCtx, cancel := context.WithCancel(pCtx)
 		defer cancel()
+		defer common.Close(uplinkReader)
+		defer common.Close(downlinkWriter)
 		if err := d.proxy.Process(pCtx, &transport.Link{Reader: uplinkReader, Writer: downlinkWriter}, d.dialer); err != nil {
 			errors.LogInfoInner(pCtx, err, "sing-mux dial connection process failed")
 		}
@@ -127,15 +130,13 @@ func (m *SingMuxClientManager) Dispatch(ctx context.Context, link *transport.Lin
 	}
 
 	// Block synchronously to prevent Xray's dispatcher / inbound handlers from prematurely tearing down the client connection.
-	defer stream.Close()
-	defer common.Close(link.Writer)
-	defer common.Interrupt(link.Reader)
-
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
+		defer closeReader(link.Reader)
+		defer stream.Close()
 		err := buf.Copy(buf.NewReader(stream), link.Writer)
 		if err != nil {
 			errors.LogInfo(context.Background(), "sing-mux client copy server to link err: ", err)
@@ -144,6 +145,8 @@ func (m *SingMuxClientManager) Dispatch(ctx context.Context, link *transport.Lin
 
 	go func() {
 		defer wg.Done()
+		defer common.Close(link.Writer)
+		defer stream.Close()
 		err := buf.Copy(link.Reader, buf.NewWriter(stream))
 		if err != nil {
 			errors.LogInfo(context.Background(), "sing-mux client copy link to server err: ", err)
@@ -197,3 +200,31 @@ func StringToBps(s string) uint64 {
 	}
 	return n
 }
+
+func closeReader(reader interface{}) {
+	if reader == nil {
+		return
+	}
+	if c, ok := reader.(io.Closer); ok {
+		_ = c.Close()
+		return
+	}
+	if c, ok := reader.(common.Interruptible); ok {
+		c.Interrupt()
+		return
+	}
+
+	switch r := reader.(type) {
+	case *buf.BufferedReader:
+		closeReader(r.Reader)
+	case *buf.TimeoutWrapperReader:
+		closeReader(r.Reader)
+	case *buf.ReadVReader:
+		closeReader(r.Reader)
+	case interface{ Upstream() any }:
+		closeReader(r.Upstream())
+	case interface{ NetConn() net.Conn }:
+		closeReader(r.NetConn())
+	}
+}
+
