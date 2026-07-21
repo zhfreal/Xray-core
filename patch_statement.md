@@ -155,9 +155,9 @@ The client enables `sing-mux` by specifying the `protocol` and setting `enabled:
 * **`xudpConcurrency`**: Specifies the concurrency setting for proxying XUDP over Mux connections.
 * **`xudpProxyUDP443`**: The policy for proxying UDP traffic targeting port 443 (QUIC/HTTP3). Can be `"reject"`, `"allow"`, or `"skip"`.
 * **`protocol`**: Specifies the multiplexing protocol. Must be `"smux"`, `"yamux"`, or `"h2mux"` to activate `sing-mux`. If set to `"mux"` or omitted, legacy `v2ray-mux` is used.
-* **`maxConnections`**: The maximum number of concurrent physical TCP connections that `sing-mux` will maintain.
-* **`minStreams`**: The minimum number of active streams before `sing-mux` allocates another physical connection.
-* **`maxStreams`**: The maximum number of multiplexed logical streams per physical connection.
+* **`maxConnections`**: The maximum number of concurrent physical TCP connections that `sing-mux` will maintain. If `maxConnections > 0`, it takes precedence, and `maxStreams` is completely ignored.
+* **`minStreams`**: Used when `maxConnections > 0`. The minimum number of active streams before `sing-mux` allocates another physical connection.
+* **`maxStreams`**: The maximum number of multiplexed logical streams per physical connection. (Only evaluated when `maxConnections <= 0` or omitted; otherwise bypassed).
 * **`padding`**: Enables padding at the `sing-mux` protocol layer for anti-censorship.
 * **`brutalUp` / `brutalDown`**: Rate limit strings (e.g. `"10 Mbps"`, `"20 Mbps"`, or raw numbers representing Mbps) mapping to upload and download bandwidth limits for TCP Brutal.
 
