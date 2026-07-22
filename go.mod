@@ -67,4 +67,4 @@ require (
 
 replace github.com/xtls/reality => github.com/zhfreal/REALITY v1.26.5-patch1
 
-replace github.com/metacubex/sing-mux => github.com/zhfreal/sing-mux v0.3.10-patch2
+replace github.com/metacubex/sing-mux => github.com/zhfreal/sing-mux v0.3.10-patch3
