@@ -77,6 +77,16 @@ func (c *CommonConn) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
+func (c *CommonConn) expireTicket() {
+	if c.Client != nil {
+		c.Client.RWLock.Lock()
+		if bytes.HasPrefix(c.UnitedKey, c.Client.PfsKey) {
+			c.Client.Expire = time.Now() // expired
+		}
+		c.Client.RWLock.Unlock()
+	}
+}
+
 func (c *CommonConn) Read(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
@@ -84,6 +94,7 @@ func (c *CommonConn) Read(b []byte) (int, error) {
 	if c.PeerAEAD == nil { // client's 0-RTT
 		serverRandom := make([]byte, 16)
 		if _, err := io.ReadFull(c.Conn, serverRandom); err != nil {
+			c.expireTicket()
 			return 0, err
 		}
 		c.PeerAEAD = NewAEAD(serverRandom, c.UnitedKey, c.UseAES)
@@ -93,9 +104,11 @@ func (c *CommonConn) Read(b []byte) (int, error) {
 	}
 	if c.PeerPadding != nil { // client's 1-RTT
 		if _, err := io.ReadFull(c.Conn, c.PeerPadding); err != nil {
+			c.expireTicket()
 			return 0, err
 		}
 		if _, err := c.PeerAEAD.Open(c.PeerPadding[:0], nil, c.PeerPadding, nil); err != nil {
+			c.expireTicket()
 			return 0, err
 		}
 		c.PeerPadding = nil
@@ -110,11 +123,7 @@ func (c *CommonConn) Read(b []byte) (int, error) {
 	l, err := DecodeHeader(peerHeader[:]) // l: 17~16640
 	if err != nil {
 		if c.Client != nil && strings.Contains(err.Error(), "invalid header: ") { // client's 0-RTT
-			c.Client.RWLock.Lock()
-			if bytes.HasPrefix(c.UnitedKey, c.Client.PfsKey) {
-				c.Client.Expire = time.Now() // expired
-			}
-			c.Client.RWLock.Unlock()
+			c.expireTicket()
 			return 0, errors.New("new handshake needed")
 		}
 		return 0, err

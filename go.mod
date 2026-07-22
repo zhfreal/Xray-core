@@ -65,6 +65,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/xtls/reality => github.com/zhfreal/REALITY v0.0.0-20260714042340-a575bb6dce30
+replace github.com/xtls/reality => github.com/zhfreal/REALITY v0.0.0-20260722085925-d740d5d78de6
 
 replace github.com/metacubex/sing-mux => github.com/zhfreal/sing-mux v0.3.10-patch
