@@ -5,10 +5,10 @@ This document details the modifications applied to the custom `Xray-core` codeba
 ---
 
 ## Repository Details
-* **Base Upstream Version**: Tag `v26.7.11`
+* **Base Upstream Version**: Tag `v26.7.28`
 * **Fork Repository**: `github.com/zhfreal/Xray-core`
 * **Development Branch**: `xray-wildcard-patches`
-* **Latest Local Patch Commit**: `8835be57`
+* **Latest Local Patch Commit**: `53c3c975`
 
 ---
 
