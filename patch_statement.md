@@ -18,15 +18,11 @@ This document details the modifications applied to the custom `Xray-core` codeba
 * Added a call to `config.CompileServerNamePatterns()` inside `GetREALITYConfig()` right before returning the compiled REALITY config struct. This compiles wildcard patterns (like `*.example.com` or `*`) exactly once at startup so that SNI regex evaluation is fast and efficient during connection handshakes.
 
 ### 2. Dependency Routing to Remote GitHub Fork (`go.mod`)
-* Injected a `replace` directive pointing `github.com/xtls/reality` to the remote GitHub fork `github.com/zhfreal/REALITY` to fetch and compile our custom branch remotely:
+* Injected `replace` directives pointing `github.com/xtls/reality` and `github.com/metacubex/sing-mux` to their respective remote GitHub forks to compile our custom branches:
   ```go
-  replace github.com/xtls/reality => github.com/zhfreal/REALITY v0.0.0-20260706073825-6686691e6dfb
+  replace github.com/xtls/reality => github.com/zhfreal/REALITY v1.26.5-patch2
+  replace github.com/metacubex/sing-mux => github.com/zhfreal/sing-mux v0.3.10-patch4
   ```
-* The `require` section references:
-  ```go
-  github.com/xtls/reality v0.0.0-20260630031543-79cb6080a68f
-  ```
-  The `replace` directive overrides this to point to the latest fork commit (`6686691e6dfb`).
 
 ### 3. Xmux TCP Connection Leak Fix (`transport/internet/splithttp/client.go`)
 * Updated `DefaultDialerClient.Close()` to invoke `tr.CloseIdleConnections()` on the internal HTTP transport. When an `XmuxClient` reaches its `cMaxReuseTimes` limit, it is cleanly retired and closed. This fix ensures that Go immediately drops the idle HTTP/2 connection on the client side rather than indefinitely holding it in the `ESTABLISHED` state until the remote server's timeout drops it.
@@ -206,7 +202,7 @@ proxies:
 * **Problem**: When a multiplexed connection retry occurred in Xray/Mihomo client (due to a Reality session ticket expiration after server reboot), the `clientConn` wrapper dynamically swapped the underlying stream. However, the connection copy loop (`bufio.Copy`) recursively unwrapped the connection via `Upstream() any` and kept referencing the old, closed stream object directly, leading to write failures and connection crashes.
 * **Solution**:
   - Forked `metacubex/sing-mux` to `zhfreal/sing-mux` using `gh`.
-  - Switched the `github.com/metacubex/sing-mux` dependency from a local directory to the remote fork repository and tag `github.com/zhfreal/sing-mux v0.3.10-patch` in `go.mod`.
+  - Switched the `github.com/metacubex/sing-mux` dependency to the remote fork repository and tag `github.com/zhfreal/sing-mux v0.3.10-patch4` in `go.mod`.
   - Removed `Upstream()` on the `clientConn` wrapper class inside `sing-mux` to prevent copy loops from bypassing the wrapper, ensuring transparent re-routing of packets to the active retried stream.
 
 ---
