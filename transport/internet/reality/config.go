@@ -5,6 +5,8 @@ import (
 	"io"
 	"net"
 	"os"
+	"runtime"
+	"sync"
 	"time"
 
 	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
@@ -59,15 +61,95 @@ func (c *Config) GetREALITYConfig() *reality.Config {
 	return config
 }
 
+var (
+	globalKeyLogCacheMu  sync.Mutex
+	globalKeyLogCacheSeq uint64
+	globalKeyLogCache    = make(map[string]*keyLogWriterWrapper)
+)
+
+type keyLogWriterWrapper struct {
+	sync.Mutex
+	file     *os.File
+	refCount int
+	path     string
+}
+
+func (w *keyLogWriterWrapper) Write(p []byte) (n int, err error) {
+	w.Lock()
+	defer w.Unlock()
+	if w.file == nil {
+		return 0, os.ErrClosed
+	}
+	return w.file.Write(p)
+}
+
+func (w *keyLogWriterWrapper) addRef() {
+	w.Lock()
+	w.refCount++
+	w.Unlock()
+}
+
+func (w *keyLogWriterWrapper) release() {
+	w.Lock()
+	w.refCount--
+	if w.refCount <= 0 {
+		if w.file != nil {
+			w.file.Close()
+			w.file = nil
+		}
+		globalKeyLogCacheMu.Lock()
+		if globalKeyLogCache[w.path] == w {
+			delete(globalKeyLogCache, w.path)
+		}
+		globalKeyLogCacheMu.Unlock()
+	}
+	w.Unlock()
+}
+
+func getKeyLogWriter(path string) (*keyLogWriterWrapper, error) {
+	globalKeyLogCacheMu.Lock()
+	defer globalKeyLogCacheMu.Unlock()
+
+	if w, ok := globalKeyLogCache[path]; ok {
+		w.addRef()
+		return w, nil
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, err
+	}
+
+	w := &keyLogWriterWrapper{
+		file:     file,
+		refCount: 1,
+		path:     path,
+	}
+	globalKeyLogCache[path] = w
+	return w, nil
+}
+
 func KeyLogWriterFromConfig(c *Config) io.Writer {
 	if len(c.MasterKeyLog) <= 0 || c.MasterKeyLog == "none" {
 		return nil
 	}
 
-	writer, err := os.OpenFile(c.MasterKeyLog, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
+	globalKeyLogCacheMu.Lock()
+	if c.id == 0 {
+		globalKeyLogCacheSeq++
+		c.id = globalKeyLogCacheSeq
+	}
+	globalKeyLogCacheMu.Unlock()
+
+	writer, err := getKeyLogWriter(c.MasterKeyLog)
 	if err != nil {
 		errors.LogErrorInner(context.Background(), err, "failed to open ", c.MasterKeyLog, " as master key log")
+		return nil
 	}
+
+	runtime.SetFinalizer(c, func(cfg *Config) {
+		writer.release()
+	})
 
 	return writer
 }

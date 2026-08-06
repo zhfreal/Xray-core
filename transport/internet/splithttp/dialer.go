@@ -37,13 +37,14 @@ import (
 )
 
 type dialerConf struct {
-	net.Destination
-	*internet.MemoryStreamConfig
+	dest     net.Destination
+	configID uint64
 }
 
 var (
-	globalDialerMap    map[dialerConf]*XmuxManager
-	globalDialerAccess sync.Mutex
+	globalDialerMap       map[dialerConf]*XmuxManager
+	globalDialerAccess    sync.Mutex
+	globalStreamConfigSeq uint64
 )
 
 func getHTTPClient(ctx context.Context, dest net.Destination, streamSettings *internet.MemoryStreamConfig) (DialerClient, *XmuxClient) {
@@ -54,13 +55,18 @@ func getHTTPClient(ctx context.Context, dest net.Destination, streamSettings *in
 	}
 
 	globalDialerAccess.Lock()
-	defer globalDialerAccess.Unlock()
-
 	if globalDialerMap == nil {
 		globalDialerMap = make(map[dialerConf]*XmuxManager)
 	}
 
-	key := dialerConf{dest, streamSettings}
+	if streamSettings.Id == 0 {
+		globalStreamConfigSeq++
+		streamSettings.Id = globalStreamConfigSeq
+	}
+	key := dialerConf{
+		dest:     dest,
+		configID: streamSettings.Id,
+	}
 
 	xmuxManager, found := globalDialerMap[key]
 
@@ -71,11 +77,34 @@ func getHTTPClient(ctx context.Context, dest net.Destination, streamSettings *in
 			xmuxConfig = &XmuxConfig{}
 		}
 
+		// BREAK CLOSURE CYCLE: Shallow copy streamSettings so that the closure
+		// references the copied struct instead of the original pointer.
+		clonedSettings := *streamSettings
+
 		xmuxManager = NewXmuxManager(xmuxConfig, func() XmuxConn {
-			return createHTTPClient(dest, streamSettings)
+			return createHTTPClient(dest, &clonedSettings)
 		})
 		globalDialerMap[key] = xmuxManager
+
+		runtime.SetFinalizer(streamSettings, func(s *internet.MemoryStreamConfig) {
+			id := s.Id
+			var toClose []*XmuxManager
+
+			globalDialerAccess.Lock()
+			for k, manager := range globalDialerMap {
+				if k.configID == id {
+					toClose = append(toClose, manager)
+					delete(globalDialerMap, k)
+				}
+			}
+			globalDialerAccess.Unlock()
+
+			for _, manager := range toClose {
+				manager.Close()
+			}
+		})
 	}
+	globalDialerAccess.Unlock()
 
 	xmuxClient := xmuxManager.GetXmuxClient(ctx)
 	return xmuxClient.XmuxConn.(DialerClient), xmuxClient

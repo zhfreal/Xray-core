@@ -365,20 +365,8 @@ func isControlCaller() bool {
 }
 
 func (c *brutalConn) SyscallConn() (syscall.RawConn, error) {
-	var pcs [10]uintptr
-	n := runtime.Callers(2, pcs[:])
-	frames := runtime.CallersFrames(pcs[:n])
-	var caller string
-	for {
-		frame, more := frames.Next()
-		caller += " -> " + frame.Function
-		if !more {
-			break
-		}
-	}
-	res := c.sc != nil && isControlCaller()
-	errors.LogWarning(context.Background(), "SyscallConn called by: ", caller, " | returning rawConn: ", res)
-	if res {
+	if c.sc != nil && isControlCaller() {
+		errors.LogDebug(context.Background(), "brutalConn.SyscallConn: returning real raw connection")
 		return c.sc.SyscallConn()
 	}
 	return nil, os.ErrInvalid

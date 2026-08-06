@@ -131,3 +131,11 @@ func (m *XmuxManager) GetXmuxClient(ctx context.Context) *XmuxClient { // when l
 	}
 	return xmuxClient
 }
+
+func (m *XmuxManager) Close() {
+	for _, client := range m.xmuxClients {
+		client.NotUsed.Store(true)
+		client.maybeClose()
+	}
+	m.xmuxClients = nil
+}

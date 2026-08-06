@@ -23,6 +23,7 @@ const (
 
 type Config struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
+	id                    uint64
 	Show                  bool                   `protobuf:"varint,1,opt,name=show,proto3" json:"show,omitempty"`
 	Dest                  string                 `protobuf:"bytes,2,opt,name=dest,proto3" json:"dest,omitempty"`
 	Type                  string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`

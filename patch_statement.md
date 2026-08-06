@@ -221,3 +221,13 @@ When updating upstream REALITY or merging newer changes:
    `v0.0.0-YYYYMMDDHHMMSS-12charhash`
 5. Update `Xray-core-mine/go.mod`'s `replace` directive to point to the new remote pseudo-version, then run `go mod tidy` and test compilation.
 
+---
+
+### 11. Refined Bug Fixes (August 2026 Patches)
+* **OCSP Ticker Callback Tokenization (BUG-1, BUG-2, BUG-3)**: Implemented tokenized callbacks with stop channels in `setupOcspTicker` to cleanly support hot-reloads and prevent goroutine leaks when configs are discarded.
+* **VLESS Debug Prints Removal (BUG-4)**: Eliminated dead/debug wrappers (`flushConn` / `unwrapConn` / `reflect`) in VLESS and replaced `fmt.Println` with `errors.LogWarning` in Reality.
+* **sing-mux Thread-Safe retry & Replay Guard (BUG-11, BUG-12)**: Redesigned the retry mechanism in `sing-mux-mine/client_conn.go` to use connection and state locks, condition variables, and check `swapped` flags to prevent concurrent duplicate buffer replays.
+* **KeyLogWriter Lifecycle Safety (BUG-6)**: Managed open `KeyLogWriter` file handles using a refcounted cache and `tls.Config` / `reality.Config` finalizers, avoiding premature closure errors.
+* **wildcard Active Probing (BUG-14)**: Updated `GetProbeSNI` and `GetConcreteDomain` in `reality-mine/record_detect.go` to support random prefix generation, entropy-starvation fallbacks, and sibling SNI/IP destination fallbacks.
+
+

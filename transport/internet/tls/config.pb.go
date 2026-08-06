@@ -178,6 +178,7 @@ func (x *Certificate) GetBuildChain() bool {
 
 type Config struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
+	id    uint64
 	// List of certificates to be served on server.
 	Certificate []*Certificate `protobuf:"bytes,2,rep,name=certificate,proto3" json:"certificate,omitempty"`
 	// Override server name.
