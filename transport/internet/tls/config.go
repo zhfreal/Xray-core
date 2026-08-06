@@ -53,6 +53,10 @@ type cachedCertState struct {
 	cancels  []func()
 }
 
+func (s *cachedCertState) addRefLocked() {
+	s.refCount++
+}
+
 func (s *cachedCertState) addRef() {
 	s.Lock()
 	s.refCount++
@@ -189,7 +193,7 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 		state.cancels = append(state.cancels, cancel)
 	}
 
-	state.addRef()
+	state.addRefLocked()
 	return state.certs
 }
 
@@ -239,7 +243,7 @@ func (c *Config) getCustomCA() []*Certificate {
 		}
 	}
 	state.caCerts = certs
-	state.addRef()
+	state.addRefLocked()
 	return state.caCerts
 }
 
