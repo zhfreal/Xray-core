@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"math"
 	"math/big"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -42,6 +43,7 @@ func (c *XmuxClient) maybeClose() {
 }
 
 type XmuxManager struct {
+	sync.Mutex
 	xmuxConfig  *XmuxConfig
 	concurrency int32
 	connections int32
@@ -59,9 +61,9 @@ func NewXmuxManager(xmuxConfig *XmuxConfig, newConnFunc func() XmuxConn) *XmuxMa
 	}
 }
 
-func (m *XmuxManager) newXmuxClient() *XmuxClient {
+func (m *XmuxManager) appendNewXmuxClientLocked(newConn XmuxConn) *XmuxClient {
 	xmuxClient := &XmuxClient{
-		XmuxConn:  m.newConnFunc(),
+		XmuxConn:  newConn,
 		leftUsage: -1,
 	}
 	if x := m.xmuxConfig.GetNormalizedCMaxReuseTimes().rand(); x > 0 {
@@ -78,7 +80,8 @@ func (m *XmuxManager) newXmuxClient() *XmuxClient {
 	return xmuxClient
 }
 
-func (m *XmuxManager) GetXmuxClient(ctx context.Context) *XmuxClient { // when locking
+func (m *XmuxManager) GetXmuxClient(ctx context.Context) *XmuxClient {
+	m.Lock()
 	for i := 0; i < len(m.xmuxClients); {
 		xmuxClient := m.xmuxClients[i]
 		if xmuxClient.XmuxConn.IsClosed() ||
@@ -98,41 +101,54 @@ func (m *XmuxManager) GetXmuxClient(ctx context.Context) *XmuxClient { // when l
 		}
 	}
 
-	if len(m.xmuxClients) == 0 {
-		errors.LogDebug(ctx, "XMUX: creating xmuxClient because xmuxClients is empty")
-		return m.newXmuxClient()
-	}
-
-	if m.connections > 0 && len(m.xmuxClients) < int(m.connections) {
-		errors.LogDebug(ctx, "XMUX: creating xmuxClient because maxConnections was not hit, xmuxClients = ", len(m.xmuxClients))
-		return m.newXmuxClient()
-	}
-
-	xmuxClients := make([]*XmuxClient, 0)
-	if m.concurrency > 0 {
-		for _, xmuxClient := range m.xmuxClients {
-			if xmuxClient.Running.Load() < m.concurrency {
-				xmuxClients = append(xmuxClients, xmuxClient)
-			}
+	selectReusableClient := func() *XmuxClient {
+		if len(m.xmuxClients) == 0 {
+			return nil
 		}
-	} else {
-		xmuxClients = m.xmuxClients
+
+		if m.connections > 0 && len(m.xmuxClients) < int(m.connections) {
+			return nil
+		}
+
+		xmuxClients := make([]*XmuxClient, 0)
+		if m.concurrency > 0 {
+			for _, xmuxClient := range m.xmuxClients {
+				if xmuxClient.Running.Load() < m.concurrency {
+					xmuxClients = append(xmuxClients, xmuxClient)
+				}
+			}
+		} else {
+			xmuxClients = m.xmuxClients
+		}
+
+		if len(xmuxClients) == 0 {
+			return nil
+		}
+
+		i, _ := rand.Int(rand.Reader, big.NewInt(int64(len(xmuxClients))))
+		xmuxClient := xmuxClients[i.Int64()]
+		if xmuxClient.leftUsage > 0 {
+			xmuxClient.leftUsage -= 1
+		}
+		return xmuxClient
 	}
 
-	if len(xmuxClients) == 0 {
-		errors.LogDebug(ctx, "XMUX: creating xmuxClient because maxConcurrency was hit, xmuxClients = ", len(m.xmuxClients))
-		return m.newXmuxClient()
+	if xmuxClient := selectReusableClient(); xmuxClient != nil {
+		m.Unlock()
+		return xmuxClient
 	}
+	m.Unlock()
 
-	i, _ := rand.Int(rand.Reader, big.NewInt(int64(len(xmuxClients))))
-	xmuxClient := xmuxClients[i.Int64()]
-	if xmuxClient.leftUsage > 0 {
-		xmuxClient.leftUsage -= 1
-	}
-	return xmuxClient
+	newConn := m.newConnFunc()
+
+	m.Lock()
+	defer m.Unlock()
+	return m.appendNewXmuxClientLocked(newConn)
 }
 
 func (m *XmuxManager) Close() {
+	m.Lock()
+	defer m.Unlock()
 	for _, client := range m.xmuxClients {
 		client.NotUsed.Store(true)
 		client.maybeClose()
