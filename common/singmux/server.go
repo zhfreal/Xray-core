@@ -373,12 +373,17 @@ func (c *brutalConn) SyscallConn() (syscall.RawConn, error) {
 }
 
 func (c *brutalConn) WriteVectorised(buffers []*singbuf.Buffer) error {
+	totalLen := 0
 	for _, b := range buffers {
-		if _, err := c.Conn.Write(b.Bytes()); err != nil {
-			return err
-		}
+		totalLen += b.Len()
 	}
-	return nil
+	combined := make([]byte, 0, totalLen)
+	for _, b := range buffers {
+		combined = append(combined, b.Bytes()...)
+		b.Release()
+	}
+	_, err := c.Conn.Write(combined)
+	return err
 }
 
 func wrapBrutalConn(ctx context.Context, conn net.Conn) net.Conn {

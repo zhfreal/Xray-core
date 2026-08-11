@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"runtime"
 	"slices"
@@ -94,7 +95,7 @@ func (c *Config) getCachedCertState() *cachedCertState {
 		configCertCacheMu.Unlock()
 		return val
 	}
-	state := &cachedCertState{}
+	state := &cachedCertState{refCount: 1}
 	configCertCache[id] = state
 	configCertCacheMu.Unlock()
 
@@ -161,7 +162,11 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 			for i, cert := range state.certs {
 				if len(cert.Certificate) > 0 {
 					targetHash := GenerateCertHash(cert.Certificate[0])
-					entryHash := GenerateCertHash(entry.Certificate)
+					entryCertDER := entry.Certificate
+					if block, _ := pem.Decode(entry.Certificate); block != nil {
+						entryCertDER = block.Bytes
+					}
+					entryHash := GenerateCertHash(entryCertDER)
 					if hmac.Equal(targetHash, entryHash) {
 						targetPair = cert
 						index = i
@@ -193,7 +198,6 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 		state.cancels = append(state.cancels, cancel)
 	}
 
-	state.addRefLocked()
 	return state.certs
 }
 
@@ -243,7 +247,6 @@ func (c *Config) getCustomCA() []*Certificate {
 		}
 	}
 	state.caCerts = certs
-	state.addRefLocked()
 	return state.caCerts
 }
 
@@ -687,18 +690,22 @@ func (w *keyLogWriterWrapper) addRef() {
 func (w *keyLogWriterWrapper) release() {
 	w.Lock()
 	w.refCount--
-	if w.refCount <= 0 {
+	shouldClose := w.refCount <= 0
+	if shouldClose {
 		if w.file != nil {
 			w.file.Close()
 			w.file = nil
 		}
+	}
+	w.Unlock()
+
+	if shouldClose {
 		globalKeyLogCacheMu.Lock()
 		if globalKeyLogCache[w.path] == w {
 			delete(globalKeyLogCache, w.path)
 		}
 		globalKeyLogCacheMu.Unlock()
 	}
-	w.Unlock()
 }
 
 var (

@@ -3,6 +3,7 @@ package splithttp
 import (
 	"context"
 	"crypto/rand"
+	"io"
 	"math"
 	"math/big"
 	"sync"
@@ -143,6 +144,12 @@ func (m *XmuxManager) GetXmuxClient(ctx context.Context) *XmuxClient {
 
 	m.Lock()
 	defer m.Unlock()
+	if xmuxClient := selectReusableClient(); xmuxClient != nil {
+		if c, ok := newConn.(io.Closer); ok {
+			_ = c.Close()
+		}
+		return xmuxClient
+	}
 	return m.appendNewXmuxClientLocked(newConn)
 }
 

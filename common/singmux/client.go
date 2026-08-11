@@ -34,11 +34,20 @@ func (d *singDialer) DialContext(ctx context.Context, network string, destinatio
 	uplinkReader, uplinkWriter := pipe.New(opts...)
 	downlinkReader, downlinkWriter := pipe.New(opts...)
 
+	inbound := session.InboundFromContext(ctx)
+	content := session.ContentFromContext(ctx)
+
 	go func() {
 		outbounds := []*session.Outbound{{
 			Target: xraynet.TCPDestination(xraynet.DomainAddress("sp.mux.sing-box.arpa"), xraynet.Port(444)),
 		}}
 		pCtx := session.ContextWithOutbounds(context.Background(), outbounds)
+		if inbound != nil {
+			pCtx = session.ContextWithInbound(pCtx, inbound)
+		}
+		if content != nil {
+			pCtx = session.ContextWithContent(pCtx, content)
+		}
 		pCtx, cancel := context.WithCancel(pCtx)
 		defer cancel()
 		defer common.Close(uplinkReader)

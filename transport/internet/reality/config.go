@@ -33,7 +33,7 @@ func (c *Config) GetREALITYConfig() *reality.Config {
 		NextProtos:             nil, // should be nil
 		SessionTicketsDisabled: true,
 
-		KeyLogWriter: KeyLogWriterFromConfig(c),
+		KeyLogWriter:           nil, // Moved below to attach finalizer to config
 	}
 	if c.Mldsa65Seed != nil {
 		_, key := mldsa65.NewKeyFromSeed((*[32]byte)(c.Mldsa65Seed))
@@ -56,6 +56,12 @@ func (c *Config) GetREALITYConfig() *reality.Config {
 	config.ShortIds = make(map[[8]byte]bool)
 	for _, shortId := range c.ShortIds {
 		config.ShortIds[*(*[8]byte)(shortId)] = true
+	}
+	config.KeyLogWriter = KeyLogWriterFromConfig(c)
+	if w, ok := config.KeyLogWriter.(*keyLogWriterWrapper); ok {
+		runtime.SetFinalizer(config, func(cfg *reality.Config) {
+			w.release()
+		})
 	}
 	config.CompileServerNamePatterns()
 	return config
@@ -92,18 +98,22 @@ func (w *keyLogWriterWrapper) addRef() {
 func (w *keyLogWriterWrapper) release() {
 	w.Lock()
 	w.refCount--
-	if w.refCount <= 0 {
+	shouldClose := w.refCount <= 0
+	if shouldClose {
 		if w.file != nil {
 			w.file.Close()
 			w.file = nil
 		}
+	}
+	w.Unlock()
+
+	if shouldClose {
 		globalKeyLogCacheMu.Lock()
 		if globalKeyLogCache[w.path] == w {
 			delete(globalKeyLogCache, w.path)
 		}
 		globalKeyLogCacheMu.Unlock()
 	}
-	w.Unlock()
 }
 
 func getKeyLogWriter(path string) (*keyLogWriterWrapper, error) {
@@ -134,22 +144,11 @@ func KeyLogWriterFromConfig(c *Config) io.Writer {
 		return nil
 	}
 
-	globalKeyLogCacheMu.Lock()
-	if c.id == 0 {
-		globalKeyLogCacheSeq++
-		c.id = globalKeyLogCacheSeq
-	}
-	globalKeyLogCacheMu.Unlock()
-
 	writer, err := getKeyLogWriter(c.MasterKeyLog)
 	if err != nil {
 		errors.LogErrorInner(context.Background(), err, "failed to open ", c.MasterKeyLog, " as master key log")
 		return nil
 	}
-
-	runtime.SetFinalizer(c, func(cfg *Config) {
-		writer.release()
-	})
 
 	return writer
 }
