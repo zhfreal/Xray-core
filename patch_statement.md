@@ -226,4 +226,12 @@ When updating upstream REALITY or merging newer changes:
 * **KeyLogWriter Lifecycle Safety (BUG-6)**: Managed open `KeyLogWriter` file handles using a refcounted cache and `tls.Config` / `reality.Config` finalizers, avoiding premature closure errors.
 * **wildcard Active Probing (BUG-14)**: Updated `GetProbeSNI` and `GetConcreteDomain` in `reality-mine/record_detect.go` to support random prefix generation, entropy-starvation fallbacks, and sibling SNI/IP destination fallbacks.
 
+---
+
+### 12. Concurrency Safety & Multi-Inbound TLS Hardening (August 2026 Audit)
+* **Multi-Inbound Certificate Hot-Reload Distribution (`transport/internet/tls/ocsp_ticker.go` & `config.go`)**: Updated `ocspTickerState.callbacks` to distribute the newly parsed `*tls.Certificate` directly to callbacks and `globalCertCache` (`sync.Map.Store`). Eliminates stale certificate cache rewrites across multi-inbound configurations.
+* **KeyLogWriter Mutex Hierarchy (`transport/internet/tls/config.go`)**: In `keyLogWriterWrapper.release()`, acquired `globalKeyLogCacheMu` before decrementing `refCount` and deleting the entry from `globalKeyLogCache`, eliminating the race window where another goroutine could retrieve a closed file handle.
+* **Remote Patched Dependency Replace Directives (`go.mod`)**: Updated `go.mod` to reference remote patched dependencies (`github.com/zhfreal/REALITY v1.26.5+patch3` and `github.com/zhfreal/sing-mux v0.3.10+patch6`).
+* **Graceful ECH Live Testing (`transport/internet/tls/ech_test.go`)**: Handled external server ECH probe rejections gracefully in tests without panicking.
+
 

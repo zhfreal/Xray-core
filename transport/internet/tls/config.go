@@ -152,7 +152,7 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 			continue
 		}
 		cacheKey := getCertCacheKey(entry)
-		cancel := setupOcspTicker(entry, func(isReloaded, isOcspstapling bool) {
+		cancel := setupOcspTicker(entry, func(isReloaded, isOcspstapling bool, newCert *tls.Certificate) {
 			state.Lock()
 			defer state.Unlock()
 
@@ -178,13 +178,9 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 				return
 			}
 
-			if isReloaded {
-				if newKeyPair := getX509KeyPair(entry.Certificate, entry.Key); newKeyPair != nil {
-					targetPair = newKeyPair
-					globalCertCache.Store(cacheKey, newKeyPair)
-				} else {
-					return
-				}
+			if isReloaded && newCert != nil {
+				targetPair = newCert
+				globalCertCache.Store(cacheKey, newCert)
 			}
 			if isOcspstapling {
 				if newOCSPData, err := ocsp.GetOCSPForCert(targetPair.Certificate); err != nil {
@@ -242,7 +238,7 @@ func (c *Config) getCustomCA() []*Certificate {
 	for _, certificate := range c.Certificate {
 		if certificate.Usage == Certificate_AUTHORITY_ISSUE {
 			certs = append(certs, certificate)
-			cancel := setupOcspTicker(certificate, func(isReloaded, isOcspstapling bool) {})
+			cancel := setupOcspTicker(certificate, func(isReloaded, isOcspstapling bool, cert *tls.Certificate) {})
 			state.cancels = append(state.cancels, cancel)
 		}
 	}
@@ -688,6 +684,8 @@ func (w *keyLogWriterWrapper) addRef() {
 }
 
 func (w *keyLogWriterWrapper) release() {
+	globalKeyLogCacheMu.Lock()
+	defer globalKeyLogCacheMu.Unlock()
 	w.Lock()
 	w.refCount--
 	shouldClose := w.refCount <= 0
@@ -696,16 +694,11 @@ func (w *keyLogWriterWrapper) release() {
 			w.file.Close()
 			w.file = nil
 		}
-	}
-	w.Unlock()
-
-	if shouldClose {
-		globalKeyLogCacheMu.Lock()
 		if globalKeyLogCache[w.path] == w {
 			delete(globalKeyLogCache, w.path)
 		}
-		globalKeyLogCacheMu.Unlock()
 	}
+	w.Unlock()
 }
 
 var (
