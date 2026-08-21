@@ -1,4 +1,4 @@
-# PATCH STATEMENT: Wildcard SNI Matching Setup, Splithttp Fixes & Certificate Caching
+# PATCH STATEMENT: Wildcard SNI Matching, Splithttp Fixes, Certificate Caching & Burst Observatory
 
 This document details the modifications applied to the custom `Xray-core` codebase repository (`github.com/zhfreal/Xray-core`). These changes integrate wildcard SNI pattern compiling, fix splithttp resource leaks and linter warnings, add global certificate caching, and use a remote GitHub fork for the `reality` package dependency.
 
@@ -8,7 +8,7 @@ This document details the modifications applied to the custom `Xray-core` codeba
 * **Base Upstream Version**: Tag `v26.7.28`
 * **Fork Repository**: `github.com/zhfreal/Xray-core`
 * **Development Branch**: `xray-wildcard-patches`
-* **Latest Local Patch Commit**: `53c3c975`
+* **Latest Local Patch Commit**: `790f31aa`
 
 ---
 
@@ -234,4 +234,14 @@ When updating upstream REALITY or merging newer changes:
 * **Remote Patched Dependency Replace Directives (`go.mod`)**: Updated `go.mod` to reference remote patched dependencies (`github.com/zhfreal/REALITY v1.26.5+patch3` and `github.com/zhfreal/sing-mux v0.3.10+patch6`).
 * **Graceful ECH Live Testing (`transport/internet/tls/ech_test.go`)**: Handled external server ECH probe rejections gracefully in tests without panicking.
 
+---
 
+### 13. Burst Observatory Latency Reporting, Scheduling & Concurrency Fixes (August 2026)
+* **Timestamp Tracking in `HealthPingRTTS` (`app/observatory/burst/healthping_result.go`)**: Added `lastSeen`, `lastTry`, and `totalCount` fields to `HealthPingRTTS`. `Put()` now tracks `lastTry` for every probe attempt and `lastSeen` only for successful probes (non-`rttFailed`). Exported accessor methods `LastSeen()`, `LastTry()`, and `TotalCount()`.
+* **Real Timestamps in `createResult` (`app/observatory/burst/burstobserver.go`)**: Fixed `LastSeenTime` and `LastTryTime` fields in `OutboundStatus` — previously hardcoded to `0`, now populated from `HealthPingRTTS` timestamps. Also eliminated 7 redundant `getStatistics()` calls per node (reduced to 1), removing wasted CPU during status queries.
+* **Context Propagation in `MeasureDelay` (`app/observatory/burst/ping.go`)**: Changed `MeasureDelay` to accept `ctx context.Context` and use `http.NewRequestWithContext`, enabling probe cancellation. The `DialContext` closure now prefers the request `ctx` (for cancellation) but falls back to the captured root `ctxv` when `core.FromContext(ctx)` is nil (preserving Xray routing metadata). Moved `resp.Body.Close()` to a `defer` to prevent resource leaks on early returns.
+* **Scheduler Startup Race Fix (`app/observatory/burst/healthping.go`)**: Moved the `select { case <-ticker.C }` block to the top of the scheduler loop (wait-first pattern). Previously, the initial check goroutine and the scheduler goroutine both fired `doCheck` simultaneously at startup, doubling the connection storm (e.g., 144 concurrent probes instead of 72 for 72 nodes).
+* **Deadline Safety Buffer (`app/observatory/burst/healthping.go`)**: Capped the random probe delay to `maxDelay = duration - timeout - 500ms` (clamped to 0), ensuring all probes complete before the next ticker fires, preventing scheduling pile-ups.
+* **Concurrency Limiter (`app/observatory/burst/healthping.go`)**: Added a semaphore (`chan struct{}` with capacity `defaultMaxConcurrency = 16`) to `HealthPing`, acquired/released in `time.AfterFunc` callbacks. Limits simultaneous in-flight probes to 16, preventing connection storms on large node sets. Semaphore acquisition respects context cancellation.
+* **`checkConnectivity` Context Threading (`app/observatory/burst/healthping.go`)**: Added `ctx context.Context` parameter to `checkConnectivity()`, propagating cancellation to the connectivity check's `MeasureDelay` call.
+* **Unit Tests (`app/observatory/burst/healthping_result_test.go`, `healthping_test.go`, `healthping_internal_test.go`)**: Added timestamp assertion tests (verifying `LastSeen` unchanged on failure, `LastTry` updated on failure), `PutResult`/`Cleanup` integration tests, deadline buffer computation tests (6 sub-cases), `MeasureDelay` context cancellation test (mock slow server, assert <2s return), and semaphore concurrency limit test (24 workers, peak capped at 16). All pass with `-race`.

@@ -24,6 +24,10 @@ type HealthPingRTTS struct {
 
 	lastUpdateAt time.Time
 	stats        *HealthPingStats
+
+	lastSeen   time.Time
+	lastTry    time.Time
+	totalCount int64
 }
 
 type pingRTT struct {
@@ -54,6 +58,21 @@ func (h *HealthPingRTTS) GetWithCache() *HealthPingStats {
 	return h.stats
 }
 
+// LastSeen returns the timestamp of the last successful probe.
+func (h *HealthPingRTTS) LastSeen() time.Time {
+	return h.lastSeen
+}
+
+// LastTry returns the timestamp of the last probe attempt.
+func (h *HealthPingRTTS) LastTry() time.Time {
+	return h.lastTry
+}
+
+// TotalCount returns the cumulative count of probe attempts.
+func (h *HealthPingRTTS) TotalCount() int64 {
+	return h.totalCount
+}
+
 // Put puts a new rtt to the HealthPingResult
 func (h *HealthPingRTTS) Put(d time.Duration) {
 	if h.rtts == nil {
@@ -67,6 +86,11 @@ func (h *HealthPingRTTS) Put(d time.Duration) {
 	now := time.Now()
 	h.rtts[h.idx].time = now
 	h.rtts[h.idx].value = d
+	h.lastTry = now
+	h.totalCount++
+	if d != rttFailed {
+		h.lastSeen = now
+	}
 }
 
 func (h *HealthPingRTTS) calcIndex(step int) int {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/utils"
+	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/features/routing"
 	"github.com/xtls/xray-core/transport/internet/tagged"
 )
@@ -39,7 +40,11 @@ func newHTTPClient(ctxv context.Context, dispatcher routing.Dispatcher, handler 
 			if err != nil {
 				return nil, err
 			}
-			return tagged.Dialer(ctxv, dispatcher, dest, handler)
+			dialCtx := ctx
+			if core.FromContext(dialCtx) == nil {
+				dialCtx = ctxv
+			}
+			return tagged.Dialer(dialCtx, dispatcher, dest, handler)
 		},
 	}
 	return &http.Client{
@@ -53,12 +58,12 @@ func newHTTPClient(ctxv context.Context, dispatcher routing.Dispatcher, handler 
 }
 
 // MeasureDelay returns the delay time of the request to dest
-func (s *pingClient) MeasureDelay(httpMethod string) (time.Duration, error) {
+func (s *pingClient) MeasureDelay(ctx context.Context, httpMethod string) (time.Duration, error) {
 	if s.httpClient == nil {
 		panic("pingClient not initialized")
 	}
 
-	req, err := http.NewRequest(httpMethod, s.destination, nil)
+	req, err := http.NewRequestWithContext(ctx, httpMethod, s.destination, nil)
 	if err != nil {
 		return rttFailed, err
 	}
@@ -69,13 +74,13 @@ func (s *pingClient) MeasureDelay(httpMethod string) (time.Duration, error) {
 	if err != nil {
 		return rttFailed, err
 	}
+	defer resp.Body.Close()
 	if httpMethod == http.MethodGet {
 		_, err = io.Copy(io.Discard, resp.Body)
 		if err != nil {
 			return rttFailed, err
 		}
 	}
-	resp.Body.Close()
 
 	return time.Since(start), nil
 }

@@ -104,3 +104,50 @@ func TestHealthPingResultsIgnoreOutdated(t *testing.T) {
 		t.Errorf("expected: %v, actual: %v", expected, actual)
 	}
 }
+
+func TestHealthPingResultTimestamps(t *testing.T) {
+	hr := burst.NewHealthPingResult(4, time.Hour)
+	if !hr.LastSeen().IsZero() {
+		t.Errorf("initial LastSeen should be zero, got %v", hr.LastSeen())
+	}
+	if !hr.LastTry().IsZero() {
+		t.Errorf("initial LastTry should be zero, got %v", hr.LastTry())
+	}
+	if hr.TotalCount() != 0 {
+		t.Errorf("initial TotalCount should be 0, got %d", hr.TotalCount())
+	}
+
+	beforeSuccess := time.Now()
+	hr.Put(time.Millisecond * 50)
+	afterSuccess := time.Now()
+
+	if hr.TotalCount() != 1 {
+		t.Errorf("expected TotalCount 1, got %d", hr.TotalCount())
+	}
+	if hr.LastSeen().Before(beforeSuccess) || hr.LastSeen().After(afterSuccess) {
+		t.Errorf("LastSeen %v outside expected range [%v, %v]", hr.LastSeen(), beforeSuccess, afterSuccess)
+	}
+	if hr.LastTry().Before(beforeSuccess) || hr.LastTry().After(afterSuccess) {
+		t.Errorf("LastTry %v outside expected range [%v, %v]", hr.LastTry(), beforeSuccess, afterSuccess)
+	}
+
+	lastSeenBeforeFail := hr.LastSeen()
+	rttFailed := time.Duration(math.MaxInt64)
+	time.Sleep(10 * time.Millisecond)
+	beforeFail := time.Now()
+	hr.Put(rttFailed)
+	afterFail := time.Now()
+
+	if hr.TotalCount() != 2 {
+		t.Errorf("expected TotalCount 2, got %d", hr.TotalCount())
+	}
+	// LastSeen should NOT have changed on failure
+	if hr.LastSeen() != lastSeenBeforeFail {
+		t.Errorf("LastSeen should not change on rttFailed: before=%v, after=%v", lastSeenBeforeFail, hr.LastSeen())
+	}
+	// LastTry SHOULD have changed on failure
+	if hr.LastTry().Before(beforeFail) || hr.LastTry().After(afterFail) {
+		t.Errorf("LastTry %v outside expected range [%v, %v] on failure", hr.LastTry(), beforeFail, afterFail)
+	}
+}
+

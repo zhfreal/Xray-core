@@ -23,6 +23,8 @@ type HealthPingSettings struct {
 	HttpMethod    string        `json:"httpMethod"`
 }
 
+const defaultMaxConcurrency = 16
+
 // HealthPing is the health checker for balancers
 type HealthPing struct {
 	ctx           context.Context
@@ -31,6 +33,7 @@ type HealthPing struct {
 	dispatcher    routing.Dispatcher
 	access        sync.Mutex
 	ticker        *time.Ticker
+	sem           chan struct{}
 
 	Settings *HealthPingSettings
 	Results  map[string]*HealthPingRTTS
@@ -84,6 +87,7 @@ func NewHealthPing(ctx context.Context, dispatcher routing.Dispatcher, config *H
 		dispatcher: dispatcher,
 		Settings:   settings,
 		Results:    nil,
+		sem:        make(chan struct{}, defaultMaxConcurrency),
 	}
 }
 
@@ -108,6 +112,11 @@ func (h *HealthPing) StartScheduler(selector func() ([]string, error)) {
 
 	go func() {
 		for {
+			select {
+			case <-ticker.C:
+			case <-h.ctx.Done():
+				return
+			}
 			go func() {
 				tags, err := selector()
 				if err != nil {
@@ -124,12 +133,6 @@ func (h *HealthPing) StartScheduler(selector func() ([]string, error)) {
 				h.cancelPending.CompareAndSwap(&cancel, nil)
 				h.Cleanup(tags)
 			}()
-			select {
-			case <-ticker.C:
-				continue
-			case <-h.ctx.Done():
-				return
-			}
 		}
 	}()
 }
@@ -167,6 +170,14 @@ func (h *HealthPing) doCheck(ctx context.Context, tags []string, duration time.D
 	if count == 0 {
 		return
 	}
+	// Cap random delay so all probes finish before the next ticker fires
+	maxDelay := duration
+	if duration > 0 {
+		maxDelay = duration - h.Settings.Timeout - 500*time.Millisecond
+		if maxDelay <= 0 {
+			maxDelay = 0
+		}
+	}
 	ch := make(chan *rtt, count)
 	timers := make([]*time.Timer, 0, count)
 	for _, tag := range tags {
@@ -180,12 +191,24 @@ func (h *HealthPing) doCheck(ctx context.Context, tags []string, duration time.D
 		)
 		for i := 0; i < rounds; i++ {
 			delay := time.Duration(0)
-			if duration > 0 {
-				delay = time.Duration(dice.RollInt63n(int64(duration)))
+			if maxDelay > 0 {
+				delay = time.Duration(dice.RollInt63n(int64(maxDelay)))
 			}
 			timers = append(timers, time.AfterFunc(delay, func() {
+				if ctx.Err() != nil {
+					ch <- &rtt{handler: handler, value: 0}
+					return
+				}
+				select {
+				case h.sem <- struct{}{}:
+				case <-ctx.Done():
+					ch <- &rtt{handler: handler, value: 0}
+					return
+				}
+				defer func() { <-h.sem }()
+
 				errors.LogDebug(h.ctx, "checking ", handler)
-				delay, err := client.MeasureDelay(h.Settings.HttpMethod)
+				delay, err := client.MeasureDelay(ctx, h.Settings.HttpMethod)
 				if err == nil {
 					ch <- &rtt{
 						handler: handler,
@@ -193,7 +216,7 @@ func (h *HealthPing) doCheck(ctx context.Context, tags []string, duration time.D
 					}
 					return
 				}
-				if !h.checkConnectivity() {
+				if !h.checkConnectivity(ctx) {
 					errors.LogWarning(h.ctx, "network is down")
 					ch <- &rtt{
 						handler: handler,
@@ -271,7 +294,7 @@ func (h *HealthPing) Cleanup(tags []string) {
 
 // checkConnectivity checks the network connectivity, it returns
 // true if network is good or "connectivity check url" not set
-func (h *HealthPing) checkConnectivity() bool {
+func (h *HealthPing) checkConnectivity(ctx context.Context) bool {
 	if h.Settings.Connectivity == "" {
 		return true
 	}
@@ -279,7 +302,7 @@ func (h *HealthPing) checkConnectivity() bool {
 		h.Settings.Connectivity,
 		h.Settings.Timeout,
 	)
-	if _, err := tester.MeasureDelay(h.Settings.HttpMethod); err != nil {
+	if _, err := tester.MeasureDelay(ctx, h.Settings.HttpMethod); err != nil {
 		return false
 	}
 	return true
