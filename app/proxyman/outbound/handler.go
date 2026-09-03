@@ -173,8 +173,8 @@ func NewHandler(ctx context.Context, config *core.OutboundHandlerConfig) (outbou
 						},
 					}
 				}
-				h.udp443 = config.XudpProxyUDP443
 			}
+			h.udp443 = config.XudpProxyUDP443
 		}
 	}
 
@@ -217,6 +217,19 @@ func (h *Handler) Dispatch(ctx context.Context, link *transport.Link) {
 	if ob.Target.Network == net.Network_UDP && ob.OriginalTarget.Address != nil && ob.OriginalTarget.Address != ob.Target.Address {
 		link.Reader = &buf.EndpointOverrideReader{Reader: link.Reader, Dest: ob.Target.Address, OriginalDest: ob.OriginalTarget.Address}
 		link.Writer = &buf.EndpointOverrideWriter{Writer: link.Writer, Dest: ob.Target.Address, OriginalDest: ob.OriginalTarget.Address}
+	}
+	if ob.Target.Network == net.Network_UDP && ob.Target.Port == 443 && h.udp443 != "" {
+		switch h.udp443 {
+		case "reject":
+			err := errors.New("XUDP rejected UDP/443 traffic").AtInfo()
+			session.SubmitOutboundErrorToOriginator(ctx, err)
+			errors.LogInfo(ctx, err.Error())
+			common.Interrupt(link.Writer)
+			common.Interrupt(link.Reader)
+			return
+		case "skip":
+			goto out
+		}
 	}
 	if h.singMux != nil {
 		test := func(err error) {

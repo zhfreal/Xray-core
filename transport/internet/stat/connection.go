@@ -2,6 +2,7 @@ package stat
 
 import (
 	"net"
+	"syscall"
 
 	"github.com/xtls/xray-core/features/stats"
 )
@@ -31,6 +32,21 @@ func (c *CounterConnection) Write(b []byte) (int, error) {
 		c.WriteCounter.Add(int64(nBytes))
 	}
 	return nBytes, err
+}
+
+func (c *CounterConnection) Upstream() any {
+	return c.Connection
+}
+
+func (c *CounterConnection) NetConn() net.Conn {
+	return c.Connection
+}
+
+func (c *CounterConnection) SyscallConn() (syscall.RawConn, error) {
+	if sc, ok := c.Connection.(syscall.Conn); ok {
+		return sc.SyscallConn()
+	}
+	return nil, syscall.EINVAL
 }
 
 func TryUnwrapStatsConn(conn net.Conn) net.Conn {

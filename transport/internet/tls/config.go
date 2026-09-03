@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/pem"
 	"os"
 	"runtime"
 	"slices"
@@ -54,10 +53,6 @@ type cachedCertState struct {
 	cancels  []func()
 }
 
-func (s *cachedCertState) addRefLocked() {
-	s.refCount++
-}
-
 func (s *cachedCertState) addRef() {
 	s.Lock()
 	s.refCount++
@@ -80,7 +75,6 @@ var (
 	configCertCacheSeq uint64
 	configCertCacheMu  sync.Mutex
 	configCertCache    = make(map[uint64]*cachedCertState)
-	globalCaCertMutex  sync.RWMutex
 )
 
 func (c *Config) getCachedCertState() *cachedCertState {
@@ -124,6 +118,7 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 	}
 
 	certs := make([]*tls.Certificate, 0, len(c.Certificate))
+	var validCertIndices []int
 	for _, entry := range c.Certificate {
 		if entry.Usage != Certificate_ENCIPHERMENT {
 			continue
@@ -142,13 +137,22 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 
 		if keyPair != nil {
 			certs = append(certs, keyPair)
+			validCertIndices = append(validCertIndices, len(certs)-1)
+		} else {
+			validCertIndices = append(validCertIndices, -1)
 		}
 	}
 	state.certs = certs
 
 	// Refcount and setup callbacks
+	var validIdx int
 	for _, entry := range c.Certificate {
 		if entry.Usage != Certificate_ENCIPHERMENT {
+			continue
+		}
+		certIndex := validCertIndices[validIdx]
+		validIdx++
+		if certIndex == -1 {
 			continue
 		}
 		cacheKey := getCertCacheKey(entry)
@@ -156,27 +160,10 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 			state.Lock()
 			defer state.Unlock()
 
-			// Find keypair index
-			var targetPair *tls.Certificate
-			var index int = -1
-			for i, cert := range state.certs {
-				if len(cert.Certificate) > 0 {
-					targetHash := GenerateCertHash(cert.Certificate[0])
-					entryCertDER := entry.Certificate
-					if block, _ := pem.Decode(entry.Certificate); block != nil {
-						entryCertDER = block.Bytes
-					}
-					entryHash := GenerateCertHash(entryCertDER)
-					if hmac.Equal(targetHash, entryHash) {
-						targetPair = cert
-						index = i
-						break
-					}
-				}
-			}
-			if index == -1 {
+			if certIndex < 0 || certIndex >= len(state.certs) {
 				return
 			}
+			targetPair := state.certs[certIndex]
 
 			if isReloaded && newCert != nil {
 				targetPair = newCert
@@ -189,7 +176,7 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 					targetPair.OCSPStaple = newOCSPData
 				}
 			}
-			state.certs[index] = targetPair
+			state.certs[certIndex] = targetPair
 		})
 		state.cancels = append(state.cancels, cancel)
 	}

@@ -68,9 +68,8 @@ func (c *Config) GetREALITYConfig() *reality.Config {
 }
 
 var (
-	globalKeyLogCacheMu  sync.Mutex
-	globalKeyLogCacheSeq uint64
-	globalKeyLogCache    = make(map[string]*keyLogWriterWrapper)
+	globalKeyLogCacheMu sync.Mutex
+	globalKeyLogCache   = make(map[string]*keyLogWriterWrapper)
 )
 
 type keyLogWriterWrapper struct {
@@ -96,6 +95,8 @@ func (w *keyLogWriterWrapper) addRef() {
 }
 
 func (w *keyLogWriterWrapper) release() {
+	globalKeyLogCacheMu.Lock()
+	defer globalKeyLogCacheMu.Unlock()
 	w.Lock()
 	w.refCount--
 	shouldClose := w.refCount <= 0
@@ -104,16 +105,11 @@ func (w *keyLogWriterWrapper) release() {
 			w.file.Close()
 			w.file = nil
 		}
-	}
-	w.Unlock()
-
-	if shouldClose {
-		globalKeyLogCacheMu.Lock()
 		if globalKeyLogCache[w.path] == w {
 			delete(globalKeyLogCache, w.path)
 		}
-		globalKeyLogCacheMu.Unlock()
 	}
+	w.Unlock()
 }
 
 func getKeyLogWriter(path string) (*keyLogWriterWrapper, error) {

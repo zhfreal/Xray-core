@@ -205,15 +205,14 @@ func (h *serviceHandler) NewPacketConnection(ctx context.Context, conn N.PacketC
 	}
 
 	// Block synchronously here to prevent sing-mux from closing the underlay packet stream when NewPacketConnection returns.
-	defer conn.Close()
-	defer common.Close(link.Writer)
-	defer common.Interrupt(link.Reader)
-
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
+		defer conn.Close()
+		defer common.Interrupt(link.Reader)
+		defer common.Close(link.Writer)
 		// Read packets from sing PacketConn and write to Xray link.Writer
 		for {
 			singBuf := singbuf.NewPacket()
@@ -234,6 +233,9 @@ func (h *serviceHandler) NewPacketConnection(ctx context.Context, conn N.PacketC
 
 	go func() {
 		defer wg.Done()
+		defer conn.Close()
+		defer common.Interrupt(link.Reader)
+		defer common.Close(link.Writer)
 		// Read from Xray link.Reader and write to sing PacketConn
 		for {
 			multiBuffer, err := link.Reader.ReadMultiBuffer()

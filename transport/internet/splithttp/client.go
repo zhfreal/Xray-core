@@ -191,37 +191,42 @@ func (c *DefaultDialerClient) Close() error {
 
 type WaitReadCloser struct {
 	Wait chan struct{}
-	io.ReadCloser
+	once sync.Once
+	mu   sync.RWMutex
+	rc   io.ReadCloser
 }
 
 func (w *WaitReadCloser) Set(rc io.ReadCloser) {
-	w.ReadCloser = rc
-	defer func() {
-		if recover() != nil {
-			rc.Close()
-		}
-	}()
-	close(w.Wait)
+	w.mu.Lock()
+	w.rc = rc
+	w.mu.Unlock()
+	w.once.Do(func() {
+		close(w.Wait)
+	})
 }
 
 func (w *WaitReadCloser) Read(b []byte) (int, error) {
-	if w.ReadCloser == nil {
-		if <-w.Wait; w.ReadCloser == nil {
-			return 0, io.ErrClosedPipe
-		}
+	<-w.Wait
+	w.mu.RLock()
+	rc := w.rc
+	w.mu.RUnlock()
+	if rc == nil {
+		return 0, io.ErrClosedPipe
 	}
-	return w.ReadCloser.Read(b)
+	return rc.Read(b)
 }
 
 func (w *WaitReadCloser) Close() error {
-	if w.ReadCloser != nil {
-		return w.ReadCloser.Close()
+	w.mu.Lock()
+	rc := w.rc
+	w.rc = nil
+	w.mu.Unlock()
+	w.once.Do(func() {
+		close(w.Wait)
+	})
+	if rc != nil {
+		return rc.Close()
 	}
-	defer func() {
-		if recover() != nil && w.ReadCloser != nil {
-			w.ReadCloser.Close()
-		}
-	}()
-	close(w.Wait)
 	return nil
 }
+

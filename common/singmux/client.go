@@ -7,6 +7,7 @@ import (
 	"net"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/metacubex/sing-mux"
@@ -173,9 +174,10 @@ func (m *SingMuxClientManager) Close() error {
 	return m.client.Close()
 }
 
-var rateStringRegexp = regexp.MustCompile(`^(\d+)\s*([KMGT]?)([Bb])ps$`)
+var rateStringRegexp = regexp.MustCompile(`(?i)^(\d+)\s*([kmgt]?)([b])ps$`)
 
 func StringToBps(s string) uint64 {
+	s = strings.TrimSpace(s)
 	if s == "" {
 		return 0
 	}
@@ -189,7 +191,7 @@ func StringToBps(s string) uint64 {
 		return 0
 	}
 	var n uint64 = 1
-	switch m[2] {
+	switch strings.ToUpper(m[2]) {
 	case "T":
 		n *= 1000
 		fallthrough

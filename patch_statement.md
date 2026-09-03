@@ -8,7 +8,7 @@ This document details the modifications applied to the custom `Xray-core` codeba
 * **Base Upstream Version**: Tag `v26.7.28`
 * **Fork Repository**: `github.com/zhfreal/Xray-core`
 * **Development Branch**: `xray-wildcard-patches`
-* **Latest Local Patch Commit**: `790f31aa`
+* **Latest Local Patch Commit**: `09bb7f1c`
 
 ---
 
@@ -20,8 +20,8 @@ This document details the modifications applied to the custom `Xray-core` codeba
 ### 2. Dependency Routing to Remote GitHub Fork (`go.mod`)
 * Injected `replace` directives pointing `github.com/xtls/reality` and `github.com/metacubex/sing-mux` to their respective remote GitHub forks to compile our custom branches:
   ```go
-  replace github.com/xtls/reality => github.com/zhfreal/REALITY v1.26.5-patch2
-  replace github.com/metacubex/sing-mux => github.com/zhfreal/sing-mux v0.3.10-patch4
+  replace github.com/xtls/reality => github.com/zhfreal/REALITY v1.26.6-0.20260816141302-f0d1b9ba263b
+  replace github.com/metacubex/sing-mux => github.com/zhfreal/sing-mux v0.3.10-patch7
   ```
 
 ### 3. Xmux TCP Connection Leak Fix (`transport/internet/splithttp/client.go`)
@@ -193,7 +193,7 @@ proxies:
 ### 9. sing-mux TCP Brutal Socket Pacing Compatibility
 * **Problem**: TCP Brutal in `metacubex/sing-mux` configures TCP socket pacing via the `TCP_CONGESTION` and `TCP_BRUTAL_PARAMS` (23301) syscalls. Because Xray-core runs `sing-mux` deep within a multiplexed connection wrapped by memory pipes (`cnc.Connection`), `sing-mux` failed to cast the connection to a `syscall.Conn` and rejected client Brutal requests, breaking proxy connectivity.
 * **Solution**:
-  - Implemented `Upstream()` and `NetConn()` interfaces for Xray's `stat.CounterConnection` (`transport/internet/stat/connection.go`) to allow robust connection unwrapping.
+  - Implemented `Upstream()`, `NetConn()`, and `SyscallConn()` interfaces for Xray's `stat.CounterConnection` (`transport/internet/stat/connection.go`) to allow robust connection unwrapping and raw syscall access.
   - Injected a `brutalConn` connection wrapper in `common/singmux/server.go` just before the connection is passed to `sing-mux`. This intercepts `SyscallConn()` queries, extracting the raw physical TCP socket from `session.InboundFromContext(ctx)` and exposing it directly to `sing-mux`, ensuring Brutal pacing successfully applies at the kernel level.
 
 ---
@@ -202,7 +202,7 @@ proxies:
 * **Problem**: When a multiplexed connection retry occurred in Xray/Mihomo client (due to a Reality session ticket expiration after server reboot), the `clientConn` wrapper dynamically swapped the underlying stream. However, the connection copy loop (`bufio.Copy`) recursively unwrapped the connection via `Upstream() any` and kept referencing the old, closed stream object directly, leading to write failures and connection crashes.
 * **Solution**:
   - Forked `metacubex/sing-mux` to `zhfreal/sing-mux` using `gh`.
-  - Switched the `github.com/metacubex/sing-mux` dependency to the remote fork repository and tag `github.com/zhfreal/sing-mux v0.3.10-patch4` in `go.mod`.
+  - Switched the `github.com/metacubex/sing-mux` dependency to the remote fork repository and tag `github.com/zhfreal/sing-mux v0.3.10-patch7` in `go.mod`.
   - Removed `Upstream()` on the `clientConn` wrapper class inside `sing-mux` to prevent copy loops from bypassing the wrapper, ensuring transparent re-routing of packets to the active retried stream.
 
 ---
@@ -231,7 +231,7 @@ When updating upstream REALITY or merging newer changes:
 ### 12. Concurrency Safety & Multi-Inbound TLS Hardening (August 2026 Audit)
 * **Multi-Inbound Certificate Hot-Reload Distribution (`transport/internet/tls/ocsp_ticker.go` & `config.go`)**: Updated `ocspTickerState.callbacks` to distribute the newly parsed `*tls.Certificate` directly to callbacks and `globalCertCache` (`sync.Map.Store`). Eliminates stale certificate cache rewrites across multi-inbound configurations.
 * **KeyLogWriter Mutex Hierarchy (`transport/internet/tls/config.go`)**: In `keyLogWriterWrapper.release()`, acquired `globalKeyLogCacheMu` before decrementing `refCount` and deleting the entry from `globalKeyLogCache`, eliminating the race window where another goroutine could retrieve a closed file handle.
-* **Remote Patched Dependency Replace Directives (`go.mod`)**: Updated `go.mod` to reference remote patched dependencies (`github.com/zhfreal/REALITY v1.26.5+patch3` and `github.com/zhfreal/sing-mux v0.3.10+patch6`).
+* **Remote Patched Dependency Replace Directives (`go.mod`)**: Updated `go.mod` to reference remote patched dependencies (`github.com/zhfreal/REALITY v1.26.6-0.20260816141302-f0d1b9ba263b` and `github.com/zhfreal/sing-mux v0.3.10-patch7`).
 * **Graceful ECH Live Testing (`transport/internet/tls/ech_test.go`)**: Handled external server ECH probe rejections gracefully in tests without panicking.
 
 ---
@@ -245,3 +245,15 @@ When updating upstream REALITY or merging newer changes:
 * **Concurrency Limiter (`app/observatory/burst/healthping.go`)**: Added a semaphore (`chan struct{}` with capacity `defaultMaxConcurrency = 16`) to `HealthPing`, acquired/released in `time.AfterFunc` callbacks. Limits simultaneous in-flight probes to 16, preventing connection storms on large node sets. Semaphore acquisition respects context cancellation.
 * **`checkConnectivity` Context Threading (`app/observatory/burst/healthping.go`)**: Added `ctx context.Context` parameter to `checkConnectivity()`, propagating cancellation to the connectivity check's `MeasureDelay` call.
 * **Unit Tests (`app/observatory/burst/healthping_result_test.go`, `healthping_test.go`, `healthping_internal_test.go`)**: Added timestamp assertion tests (verifying `LastSeen` unchanged on failure, `LastTry` updated on failure), `PutResult`/`Cleanup` integration tests, deadline buffer computation tests (6 sub-cases), `MeasureDelay` context cancellation test (mock slow server, assert <2s return), and semaphore concurrency limit test (24 workers, peak capped at 16). All pass with `-race`.
+
+---
+
+### 14. Splithttp Data Races, sing-mux Concurrency, Certificate Reload & KeyLogWriter Fixes (September 2026 Audit)
+* **Splithttp Data Race Elimination (`transport/internet/splithttp/client.go` & `dialer.go`)**: Fixed pre-existing upstream race in `WaitReadCloser` by wrapping the field in `sync.RWMutex` and `sync.Once` channel closure. Captured `bLen := int(buff.Len())` prior to pipe handoff in `uploadWriter.Write`, fully passing `go test -race`.
+* **sing-mux UDP Packet Loop Deadlock Prevention (`common/singmux/server.go`)**: Relocated cleanup routines (`conn.Close()`, `common.Interrupt(link.Reader)`, `common.Close(link.Writer)`) from the outer function scope directly into each UDP reader/writer goroutine's defer stack in `NewPacketConnection`, ensuring loops unblock each other and preventing permanent deadlocks when remote peers disconnect.
+* **Case-Insensitive Rate String Handling (`common/singmux/client.go`)**: Added `(?i)` flag and unit normalization to `rateStringRegexp` in `StringToBps` to support `"mbps"` / `"kbps"` prefixes.
+* **`stat.CounterConnection` Unwrapping & Syscall Support (`transport/internet/stat/connection.go`)**: Implemented `Upstream()`, `NetConn()`, and `SyscallConn()` on `CounterConnection` as specified in Section 9.
+* **Reality KeyLogWriter Mutex Hierarchy Alignment (`transport/internet/reality/config.go`)**: Aligned `keyLogWriterWrapper.release()` with `tls/config.go` by locking `globalKeyLogCacheMu` before file closure and refcount decrements.
+* **TLS Certificate Hot-Reload Direct Index Binding (`transport/internet/tls/config.go`)**: Bound reloaded certificates directly by slice index rather than fragile certificate hash comparisons that fail upon file modification. Cleaned up unused `encoding/pem` import, unused `addRefLocked`, and unused `globalCaCertMutex`.
+* **Outbound UDP 443 Policy Enforcement (`app/proxyman/outbound/handler.go`)**: Moved `h.udp443` configuration outside the legacy mux `else` branch and enforced UDP 443 policy (`"reject"` / `"skip"`) before dispatching to `sing-mux`.
+
