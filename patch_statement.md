@@ -257,3 +257,14 @@ When updating upstream REALITY or merging newer changes:
 * **TLS Certificate Hot-Reload Direct Index Binding (`transport/internet/tls/config.go`)**: Bound reloaded certificates directly by slice index rather than fragile certificate hash comparisons that fail upon file modification. Cleaned up unused `encoding/pem` import, unused `addRefLocked`, and unused `globalCaCertMutex`.
 * **Outbound UDP 443 Policy Enforcement (`app/proxyman/outbound/handler.go`)**: Moved `h.udp443` configuration outside the legacy mux `else` branch and enforced UDP 443 policy (`"reject"` / `"skip"`) before dispatching to `sing-mux`.
 
+---
+
+### 15. sing-mux UDP Header Buffer Overflow Panic Fix (September 2026)
+* **Problem**: Under high-load conditions or when clients (e.g. Mihomo / Clash Meta with `smux: enabled: true, only-tcp: false`) send UDP traffic over `sing-mux` to virtual domain `sp.mux.sing-box.arpa:444`, `xray.service` crashed repeatedly with:
+  `panic: buffer overflow: capacity 48/32/7/2, start 0, need 2`
+  Inside `Xray-core-mine/common/singmux/server.go:NewPacketConnection`, UDP packets received from Xray's `link.Reader` were copied into new buffers created via `singbuf.NewPacket()` or `singbuf.NewSize()`. These new buffers were initialized with `start = 0`. When returning response packets to `sing-mux` via `conn.WritePacket(singBuf, destAddr)`, `sing-mux` (`serverPacketConn.WritePacket` / `serverPacketAddrConn.WritePacket`) prepended a 2-byte header with `buffer.ExtendHeader(2)`. Because `start < 2`, `metacubex/sing/common/buf/buffer.go` panicked with buffer overflow, causing service crash and systemd start-limit-burst lockouts on high-traffic nodes.
+* **Solution**:
+  - **Headroom Pre-allocation in `Xray-core` (`common/singmux/server.go`)**: Calculated required front headroom using `N.CalculateFrontHeadroom(conn)` with a safe minimum floor of 256 bytes (`if headroom < 256 { headroom = 256 }`). Allocated `singBuf` sized with `headroom` and shifted its start pointer using `singBuf.Resize(headroom, 0)` before copying the payload bytes. This guarantees zero reallocation copies and leaves ample headroom for `sing-mux` packet headers.
+  - **Defensive Headroom Fallback in `sing-mux` (`server_conn.go`)**: In our patched fork `github.com/zhfreal/sing-mux`, added defensive checks (`if buffer.Start() < 2`) in both `serverPacketConn.WritePacket` and `serverPacketAddrConn.WritePacket` to dynamically allocate a headroom-capable buffer rather than crashing if an unpadded buffer is passed from any component.
+  - **Unit Tests (`common/singmux/singmux_test.go`)**: Added `TestNewPacketConnectionHeadroom` to simulate UDP packet dispatch from outbound back into `sing-mux`, asserting that `Start() >= 256` and verifying that `buffer.ExtendHeader(2)` succeeds without panic.
+

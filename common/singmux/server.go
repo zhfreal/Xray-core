@@ -236,6 +236,10 @@ func (h *serviceHandler) NewPacketConnection(ctx context.Context, conn N.PacketC
 		defer conn.Close()
 		defer common.Interrupt(link.Reader)
 		defer common.Close(link.Writer)
+		headroom := N.CalculateFrontHeadroom(conn)
+		if headroom < 256 {
+			headroom = 256
+		}
 		// Read from Xray link.Reader and write to sing PacketConn
 		for {
 			multiBuffer, err := link.Reader.ReadMultiBuffer()
@@ -243,7 +247,14 @@ func (h *serviceHandler) NewPacketConnection(ctx context.Context, conn N.PacketC
 				break
 			}
 			for _, xrayBuf := range multiBuffer {
-				singBuf := singbuf.NewSize(int(xrayBuf.Len()))
+				xLen := int(xrayBuf.Len())
+				var singBuf *singbuf.Buffer
+				if xLen+headroom <= singbuf.UDPBufferSize {
+					singBuf = singbuf.NewPacket()
+				} else {
+					singBuf = singbuf.NewSize(xLen + headroom)
+				}
+				singBuf.Resize(headroom, 0)
 				_, _ = singBuf.Write(xrayBuf.Bytes())
 				xrayBuf.Release()
 
