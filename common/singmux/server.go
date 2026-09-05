@@ -64,7 +64,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 		Handler: handler,
 		Padding: false,
 		Brutal: mux.BrutalOptions{
-			Enabled:    true,
+			Enabled:    mux.BrutalAvailable && getBrutalCapBPS() > 0,
 			SendBPS:    getBrutalCapBPS(),
 			ReceiveBPS: getBrutalCapBPS(),
 		},

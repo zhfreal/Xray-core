@@ -1,7 +1,13 @@
 package singmux
 
 import (
+	"context"
 	"testing"
+
+	xraynet "github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/transport"
 )
 
 func TestStringToBps(t *testing.T) {
@@ -27,3 +33,34 @@ func TestStringToBps(t *testing.T) {
 		}
 	}
 }
+
+type mockDispatcher struct{}
+
+func (m *mockDispatcher) Type() interface{} {
+	return routing.DispatcherType()
+}
+func (m *mockDispatcher) Start() error { return nil }
+func (m *mockDispatcher) Close() error { return nil }
+func (m *mockDispatcher) Dispatch(ctx context.Context, dest xraynet.Destination) (*transport.Link, error) {
+	return nil, nil
+}
+func (m *mockDispatcher) DispatchLink(ctx context.Context, dest xraynet.Destination, link *transport.Link) error {
+	return nil
+}
+
+func TestNewServer(t *testing.T) {
+	v := &core.Instance{}
+	if err := v.AddFeature(&mockDispatcher{}); err != nil {
+		t.Fatalf("AddFeature failed: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), core.XrayKey(1), v)
+	server, err := NewServer(ctx)
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
+	if server == nil {
+		t.Fatal("expected non-nil server")
+	}
+}
+

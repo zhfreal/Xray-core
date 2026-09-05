@@ -188,7 +188,7 @@ proxies:
 * **Problem**: Previously, `sing-mux` server options for padding and TCP Brutal were statically bound. This caused protocol version mismatches (dropping clients that requested padding) and prevented clients from dynamically negotiating TCP Brutal speeds.
 * **Solution**:
   - Set `Padding: false` in `mux.ServiceOptions`. In `sing-mux`, this activates permissive mode, allowing the server to dynamically accept both `Version0` (unpadded) and `Version1` (padded) clients on the fly without conflicts.
-  - Enabled `Brutal` globally (`Enabled: true`) with an environment-variable-driven maximum speed cap (`SMUX_BRUTAL_CAP_MBPS`, defaulting to 100 Mbps). This allows well-behaved clients to dictate their speed adaptively up to the cap, while protecting the server against greedy clients requesting unlimited bandwidth.
+  - Enabled `Brutal` globally on supported platforms (`Enabled: mux.BrutalAvailable && getBrutalCapBPS() > 0`) with an environment-variable-driven maximum speed cap (`SMUX_BRUTAL_CAP_MBPS`, defaulting to 100 Mbps). On non-Linux platforms (e.g. Windows), Brutal is automatically disabled, preventing TCP Brutal startup failures (`TCP Brutal is only supported on Linux`) while allowing normal multiplexed connections to proceed smoothly.
 
 ### 9. sing-mux TCP Brutal Socket Pacing Compatibility
 * **Problem**: TCP Brutal in `metacubex/sing-mux` configures TCP socket pacing via the `TCP_CONGESTION` and `TCP_BRUTAL_PARAMS` (23301) syscalls. Because Xray-core runs `sing-mux` deep within a multiplexed connection wrapped by memory pipes (`cnc.Connection`), `sing-mux` failed to cast the connection to a `syscall.Conn` and rejected client Brutal requests, breaking proxy connectivity.
