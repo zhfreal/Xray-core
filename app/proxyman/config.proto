@@ -82,4 +82,7 @@ message MultiplexingConfig {
   bool brutal = 10;
   string brutal_up = 11;
   string brutal_down = 12;
+  string c_max_reuse_times = 13;
+  string h_max_request_times = 14;
+  string h_max_reusable_secs = 15;
 }

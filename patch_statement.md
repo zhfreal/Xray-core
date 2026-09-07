@@ -21,7 +21,7 @@ This document details the modifications applied to the custom `Xray-core` codeba
 * Injected `replace` directives pointing `github.com/xtls/reality` and `github.com/metacubex/sing-mux` to their respective remote GitHub forks to compile our custom branches:
   ```go
   replace github.com/xtls/reality => github.com/zhfreal/REALITY v1.26.6-0.20260816141302-f0d1b9ba263b
-  replace github.com/metacubex/sing-mux => github.com/zhfreal/sing-mux v0.3.10-patch7
+  replace github.com/metacubex/sing-mux => github.com/zhfreal/sing-mux v0.3.10-patch8
   ```
 
 ### 3. Xmux TCP Connection Leak Fix (`transport/internet/splithttp/client.go`)
@@ -267,4 +267,20 @@ When updating upstream REALITY or merging newer changes:
   - **Headroom Pre-allocation in `Xray-core` (`common/singmux/server.go`)**: Calculated required front headroom using `N.CalculateFrontHeadroom(conn)` with a safe minimum floor of 256 bytes (`if headroom < 256 { headroom = 256 }`). Allocated `singBuf` sized with `headroom` and shifted its start pointer using `singBuf.Resize(headroom, 0)` before copying the payload bytes. This guarantees zero reallocation copies and leaves ample headroom for `sing-mux` packet headers.
   - **Defensive Headroom Fallback in `sing-mux` (`server_conn.go`)**: In our patched fork `github.com/zhfreal/sing-mux`, added defensive checks (`if buffer.Start() < 2`) in both `serverPacketConn.WritePacket` and `serverPacketAddrConn.WritePacket` to dynamically allocate a headroom-capable buffer rather than crashing if an unpadded buffer is passed from any component.
   - **Unit Tests (`common/singmux/singmux_test.go`)**: Added `TestNewPacketConnectionHeadroom` to simulate UDP packet dispatch from outbound back into `sing-mux`, asserting that `Start() >= 256` and verifying that `buffer.ExtendHeader(2)` succeeds without panic.
+
+---
+
+### 16. XMUX-Style Connection Retirement for Mux and sing-mux (September 2026)
+* **Problem**: Under stateful censorship (e.g. GFW), long-lived multiplexed TCP connections are easily identified through traffic duration fingerprinting and frequently killed via injected `TCP RST` packets. Although Xray's `splithttp` (xhttp) implemented XMUX to retire connections after `hMaxReusableSecs`, standard `mux` (v2ray-mux) and `sing-mux` lacked connection retirement controls.
+* **Solution**:
+  - **Protobuf Configuration Extension (`app/proxyman/config.proto` & `config.pb.go`)**: Extended `MultiplexingConfig` with `c_max_reuse_times` (field 13), `h_max_request_times` (field 14), and `h_max_reusable_secs` (field 15) as strings to support range values. Updated generated Go protobuf structs and accessors.
+  - **JSON Configuration Parser (`infra/conf/xray.go` & `xray_test.go`)**: Extended `MuxConfig` with `cMaxReuseTimes`, `hMaxRequestTimes`, and `hMaxReusableSecs` mapped to `*Int32Range`. Implemented string conversion in `Build()` to preserve range notation across configurations.
+  - **Outbound Handler Wiring (`app/proxyman/outbound/handler.go`)**: Forwarded retirement configuration strings from `MultiplexSettings` into `mux.ClientStrategy` for both TCP `h.mux` and UDP `h.xudp`.
+  - **sing-mux Bridge (`common/singmux/client.go`)**: Forwarded retirement ranges directly to `sing-mux.NewClient()` options.
+  - **Worker Lifecycle & Periodic Retirement (`common/mux/client.go`)**:
+    - Embedded `unreusableAt`, `leftRequests`, and `leftReuseTimes` within `ClientWorker`.
+    - Extended `IncrementalWorkerPicker` with `drainingWorkers` tracking and retirement bounds checking in `findAvailable()`.
+    - Added in-flight stream counters (`inFlight`) and atomic request decrement in `Dispatch()` to avoid TOCTOU races between picking and session allocation.
+    - Updated `monitor()` and `cleanup()` with 5-minute hard drain timeouts to reclaim stuck retired sessions without resource leakage.
+  - **Unit Tests (`common/mux/client_test.go` & `infra/conf/xray_test.go`)**: Added test coverage verifying worker retirement on request limits, reusable seconds, and picker rollover.
 

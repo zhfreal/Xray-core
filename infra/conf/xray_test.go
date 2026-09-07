@@ -277,6 +277,15 @@ func TestMuxConfig_Build(t *testing.T) {
 			BrutalUp:        "10 Mbps",
 			BrutalDown:      "20 Mbps",
 		}},
+		{"retirement ranges", `{"enabled": true, "cMaxReuseTimes": "10-20", "hMaxRequestTimes": 100, "hMaxReusableSecs": "30-60"}`, &proxyman.MultiplexingConfig{
+			Enabled:          true,
+			Concurrency:      0,
+			XudpConcurrency:  0,
+			XudpProxyUDP443:  "reject",
+			CMaxReuseTimes:   "10-20",
+			HMaxRequestTimes: "100",
+			HMaxReusableSecs: "30-60",
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

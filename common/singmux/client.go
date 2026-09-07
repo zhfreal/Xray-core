@@ -91,8 +91,11 @@ func NewSingMuxClientManager(config *proxyman.MultiplexingConfig, p proxy.Outbou
 		MaxConnections: int(config.MaxConnections),
 		MinStreams:     int(config.MinStreams),
 		MaxStreams:     int(config.MaxStreams),
-		Padding:        config.Padding,
-		Brutal:         brutalOpts,
+		Padding:          config.Padding,
+		Brutal:           brutalOpts,
+		CMaxReuseTimes:   config.CMaxReuseTimes,
+		HMaxRequestTimes: config.HMaxRequestTimes,
+		HMaxReusableSecs: config.HMaxReusableSecs,
 	})
 	if err != nil {
 		return nil, err

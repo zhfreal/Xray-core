@@ -4,7 +4,12 @@ import (
 	"context"
 	goerrors "errors"
 	"io"
+	"math"
+	"math/rand"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/xtls/xray-core/common"
@@ -48,16 +53,17 @@ type WorkerPicker interface {
 type IncrementalWorkerPicker struct {
 	Factory ClientWorkerFactory
 
-	access      sync.Mutex
-	workers     []*ClientWorker
-	cleanupTask *task.Periodic
+	access          sync.Mutex
+	workers         []*ClientWorker
+	drainingWorkers []*ClientWorker
+	cleanupTask     *task.Periodic
 }
 
 func (p *IncrementalWorkerPicker) cleanupFunc() error {
 	p.access.Lock()
 	defer p.access.Unlock()
 
-	if len(p.workers) == 0 {
+	if len(p.workers) == 0 && len(p.drainingWorkers) == 0 {
 		return errors.New("no worker")
 	}
 
@@ -66,18 +72,51 @@ func (p *IncrementalWorkerPicker) cleanupFunc() error {
 }
 
 func (p *IncrementalWorkerPicker) cleanup() {
-	var activeWorkers []*ClientWorker
+	now := time.Now()
+	dn := 0
+	for _, w := range p.drainingWorkers {
+		if w.Closed() {
+			continue
+		}
+		if w.ActiveConnections() == 0 && w.inFlight.Load() == 0 {
+			errors.LogDebug(context.Background(), "mux: closing draining worker, ActiveConnections=0")
+			_ = w.Close()
+			continue
+		}
+		p.drainingWorkers[dn] = w
+		dn++
+	}
+	for i := dn; i < len(p.drainingWorkers); i++ {
+		p.drainingWorkers[i] = nil
+	}
+	p.drainingWorkers = p.drainingWorkers[:dn]
+
+	n := 0
 	for _, w := range p.workers {
 		if !w.Closed() {
-			activeWorkers = append(activeWorkers, w)
+			if w.IsRetired(now) {
+				if w.ActiveConnections() == 0 && w.inFlight.Load() == 0 {
+					errors.LogDebug(context.Background(), "mux: closing retired worker, ActiveConnections=0")
+					_ = w.Close()
+					continue
+				}
+				p.drainingWorkers = append(p.drainingWorkers, w)
+				continue
+			}
+			p.workers[n] = w
+			n++
 		}
 	}
-	p.workers = activeWorkers
+	for i := n; i < len(p.workers); i++ {
+		p.workers[i] = nil
+	}
+	p.workers = p.workers[:n]
 }
 
 func (p *IncrementalWorkerPicker) findAvailable() int {
+	now := time.Now()
 	for idx, w := range p.workers {
-		if !w.IsFull() {
+		if !w.IsFull() && !w.IsRetired(now) {
 			return idx
 		}
 	}
@@ -91,13 +130,20 @@ func (p *IncrementalWorkerPicker) pickInternal() (*ClientWorker, bool, error) {
 
 	idx := p.findAvailable()
 	if idx >= 0 {
+		worker := p.workers[idx]
 		n := len(p.workers)
 		if n > 1 && idx != n-1 {
 			p.workers[n-1], p.workers[idx] = p.workers[idx], p.workers[n-1]
 		}
-		return p.workers[idx], false, nil
+		if worker.leftReuseTimes.Load() > 0 {
+			worker.leftReuseTimes.Add(-1)
+		}
+		worker.inFlight.Add(1)
+		return worker, false, nil
 	}
 
+	// Evict retired workers before creating a new one, so a retired-but-not-yet-cleaned
+	// worker doesn't block new worker creation.
 	p.cleanup()
 
 	worker, err := p.Factory.Create()
@@ -118,11 +164,15 @@ func (p *IncrementalWorkerPicker) pickInternal() (*ClientWorker, bool, error) {
 
 func (p *IncrementalWorkerPicker) PickAvailable() (*ClientWorker, error) {
 	worker, start, err := p.pickInternal()
+	if err != nil {
+		return nil, err
+	}
 	if start {
+		worker.inFlight.Add(1)
 		common.Must(p.cleanupTask.Start())
 	}
 
-	return worker, err
+	return worker, nil
 }
 
 type ClientWorkerFactory interface {
@@ -169,8 +219,11 @@ func (f *DialingWorkerFactory) Create() (*ClientWorker, error) {
 }
 
 type ClientStrategy struct {
-	MaxConcurrency uint32
-	MaxConnection  uint32
+	MaxConcurrency   uint32
+	MaxConnection    uint32
+	CMaxReuseTimes   string
+	HMaxRequestTimes string
+	HMaxReusableSecs string
 }
 
 type ClientWorker struct {
@@ -179,6 +232,13 @@ type ClientWorker struct {
 	done           *done.Instance
 	timer          *time.Ticker
 	strategy       ClientStrategy
+	createdAt      time.Time
+	unreusableAt   time.Time
+	retiredAt      time.Time
+	leftRequests   atomic.Int32
+	leftReuseTimes atomic.Int32
+	inFlight       atomic.Int32
+	retired        atomic.Bool
 }
 
 var (
@@ -194,12 +254,80 @@ func NewClientWorker(stream transport.Link, s ClientStrategy) (*ClientWorker, er
 		done:           done.New(),
 		timer:          time.NewTicker(time.Second * 16),
 		strategy:       s,
+		createdAt:      time.Now(),
+	}
+	if minVal, maxVal, err := parseRangeString(s.HMaxReusableSecs); err == nil && maxVal > 0 {
+		if sec := minVal + rand.Intn(maxVal-minVal+1); sec > 0 {
+			c.unreusableAt = c.createdAt.Add(time.Duration(sec) * time.Second)
+		}
+	}
+	c.leftRequests.Store(math.MaxInt32)
+	if minVal, maxVal, err := parseRangeString(s.HMaxRequestTimes); err == nil && maxVal > 0 {
+		if req := minVal + rand.Intn(maxVal-minVal+1); req > 0 {
+			c.leftRequests.Store(int32(req))
+		}
+	}
+	c.leftReuseTimes.Store(-1)
+	if minVal, maxVal, err := parseRangeString(s.CMaxReuseTimes); err == nil && maxVal > 0 {
+		if reuse := minVal + rand.Intn(maxVal-minVal+1); reuse > 0 {
+			c.leftReuseTimes.Store(int32(reuse))
+		}
 	}
 
 	go c.fetchOutput()
 	go c.monitor()
 
 	return c, nil
+}
+
+func (m *ClientWorker) IsRetired(now time.Time) bool {
+	if m.Closed() || m.retired.Load() {
+		return true
+	}
+	if !m.unreusableAt.IsZero() && now.After(m.unreusableAt) {
+		m.retired.Store(true)
+		return true
+	}
+	if m.leftRequests.Load() <= 0 {
+		m.retired.Store(true)
+		return true
+	}
+	if m.leftReuseTimes.Load() == 0 {
+		return true
+	}
+	return false
+}
+
+// parseRangeString parses a range string like "1800-3600" or plain "1800".
+// Returns (min, max, error). For plain integers, min == max.
+// Handles whitespace and inverts bounds if min > max to prevent rand.Intn panic.
+// This is a local copy to avoid importing infra/conf (circular dependency).
+func parseRangeString(s string) (int, int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, 0, nil
+	}
+	if v, err := strconv.Atoi(s); err == nil {
+		if v < 0 {
+			return 0, 0, goerrors.New("negative range: " + s)
+		}
+		return v, v, nil
+	}
+	parts := strings.SplitN(s, "-", 2)
+	if len(parts) == 2 {
+		left, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		right, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err == nil && err2 == nil {
+			if left < 0 || right < 0 {
+				return 0, 0, goerrors.New("negative range: " + s)
+			}
+			if left > right {
+				left, right = right, left
+			}
+			return left, right, nil
+		}
+	}
+	return 0, 0, goerrors.New("invalid range string: " + s)
 }
 
 func (m *ClientWorker) TotalConnections() uint32 {
@@ -236,6 +364,27 @@ func (m *ClientWorker) monitor() {
 			common.Interrupt(m.link.Reader)
 			return
 		case <-m.timer.C:
+			now := time.Now()
+			if m.IsRetired(now) {
+				if m.sessionManager.Size() == 0 && m.inFlight.Load() == 0 {
+					errors.LogDebug(context.Background(), "mux: retired worker draining complete, closing")
+					m.sessionManager.Close()
+					common.Interrupt(m.link.Writer)
+					common.Interrupt(m.link.Reader)
+					common.Must(m.done.Close())
+					return
+				}
+				if m.retiredAt.IsZero() {
+					m.retiredAt = now
+				} else if now.Sub(m.retiredAt) > 5*time.Minute {
+					errors.LogWarning(context.Background(), "mux: retired worker exceeded hard drain timeout (5m), force closing")
+					m.sessionManager.Close()
+					common.Interrupt(m.link.Writer)
+					common.Interrupt(m.link.Reader)
+					common.Must(m.done.Close())
+					return
+				}
+			}
 			if m.sessionManager.CloseIfNoSessionAndIdle(checkSize, checkCount) {
 				common.Must(m.done.Close())
 			}
@@ -309,6 +458,19 @@ func (m *ClientWorker) IsFull() bool {
 }
 
 func (m *ClientWorker) Dispatch(ctx context.Context, link *transport.Link) bool {
+	defer m.inFlight.Add(-1)
+	if m.Closed() {
+		return false
+	}
+	now := time.Now()
+	if !m.unreusableAt.IsZero() && now.After(m.unreusableAt) {
+		m.retired.Store(true)
+		return false
+	}
+	if m.leftRequests.Load() <= 0 {
+		m.retired.Store(true)
+		return false
+	}
 	if m.IsFull() {
 		return false
 	}
@@ -317,6 +479,24 @@ func (m *ClientWorker) Dispatch(ctx context.Context, link *transport.Link) bool 
 	s := sm.Allocate(&m.strategy)
 	if s == nil {
 		return false
+	}
+	// Note: Session allocation precedes CAS decrement so that failed allocations do not
+	// prematurely consume request quota. In high-concurrency scenarios, up to MaxConcurrency
+	// simultaneous callers may pass the leftRequests > 0 check before the CAS loop, which
+	// may slightly exceed the nominal quota by at most MaxConcurrency requests. This is a
+	// conscious trade-off (matching XMUX) to guarantee zero wasted quota on allocation failure.
+	for {
+		req := m.leftRequests.Load()
+		if req <= 0 {
+			m.retired.Store(true)
+			break
+		}
+		if m.leftRequests.CompareAndSwap(req, req-1) {
+			if req-1 == 0 {
+				m.retired.Store(true)
+			}
+			break
+		}
 	}
 	s.input = link.Reader
 	s.output = link.Writer

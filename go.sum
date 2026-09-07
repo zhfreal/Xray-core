@@ -86,8 +86,8 @@ github.com/wlynxg/anet v0.0.5/go.mod h1:eay5PRQr7fIVAMbTbchTnO9gG65Hg/uYGdc7mguH
 github.com/yuin/goldmark v1.4.1/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=
 github.com/zhfreal/REALITY v1.26.6-0.20260816141302-f0d1b9ba263b h1:Nte5j+O8FG24A561zQ0gLJZCeeBc4Vy9K0cuj9X3uUg=
 github.com/zhfreal/REALITY v1.26.6-0.20260816141302-f0d1b9ba263b/go.mod h1:DsJblcWDGt76+FVqBVwbwRhxyyNJsGV48gJLch0OOWI=
-github.com/zhfreal/sing-mux v0.3.10-patch7 h1:jcie8pfzGT1WMwHYnDbFJzgvj9bRYtJep0VrpuJ9wfE=
-github.com/zhfreal/sing-mux v0.3.10-patch7/go.mod h1:8bT7ZKT3clRrJjYc/x5CRYibC1TX/bK73a3r3+2E+Fc=
+github.com/zhfreal/sing-mux v0.3.10-patch8 h1:ilbnElHuo26E2wfWckqFnzjwMiMiJ9bz0+FOTqP4T5s=
+github.com/zhfreal/sing-mux v0.3.10-patch8/go.mod h1:8bT7ZKT3clRrJjYc/x5CRYibC1TX/bK73a3r3+2E+Fc=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
 go.opentelemetry.io/auto/sdk v1.2.1/go.mod h1:KRTj+aOaElaLi+wW1kO/DZRXwkF4C5xPbEe3ZiIhN7Y=
 go.opentelemetry.io/otel v1.43.0 h1:mYIM03dnh5zfN7HautFE4ieIig9amkNANT+xcVxAj9I=

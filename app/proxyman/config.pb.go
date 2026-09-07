@@ -428,7 +428,10 @@ type MultiplexingConfig struct {
 	Padding        bool   `protobuf:"varint,9,opt,name=padding,proto3" json:"padding,omitempty"`
 	Brutal         bool   `protobuf:"varint,10,opt,name=brutal,proto3" json:"brutal,omitempty"`
 	BrutalUp       string `protobuf:"bytes,11,opt,name=brutal_up,json=brutalUp,proto3" json:"brutal_up,omitempty"`
-	BrutalDown     string `protobuf:"bytes,12,opt,name=brutal_down,json=brutalDown,proto3" json:"brutal_down,omitempty"`
+	BrutalDown       string `protobuf:"bytes,12,opt,name=brutal_down,json=brutalDown,proto3" json:"brutal_down,omitempty"`
+	CMaxReuseTimes   string `protobuf:"bytes,13,opt,name=c_max_reuse_times,json=cMaxReuseTimes,proto3" json:"c_max_reuse_times,omitempty"`
+	HMaxRequestTimes string `protobuf:"bytes,14,opt,name=h_max_request_times,json=hMaxRequestTimes,proto3" json:"h_max_request_times,omitempty"`
+	HMaxReusableSecs string `protobuf:"bytes,15,opt,name=h_max_reusable_secs,json=hMaxReusableSecs,proto3" json:"h_max_reusable_secs,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -543,6 +546,27 @@ func (x *MultiplexingConfig) GetBrutalUp() string {
 func (x *MultiplexingConfig) GetBrutalDown() string {
 	if x != nil {
 		return x.BrutalDown
+	}
+	return ""
+}
+
+func (x *MultiplexingConfig) GetCMaxReuseTimes() string {
+	if x != nil {
+		return x.CMaxReuseTimes
+	}
+	return ""
+}
+
+func (x *MultiplexingConfig) GetHMaxRequestTimes() string {
+	if x != nil {
+		return x.HMaxRequestTimes
+	}
+	return ""
+}
+
+func (x *MultiplexingConfig) GetHMaxReusableSecs() string {
+	if x != nil {
+		return x.HMaxReusableSecs
 	}
 	return ""
 }
