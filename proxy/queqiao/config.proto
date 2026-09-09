@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package xray.proxy.queqiao;
+option csharp_namespace = "Xray.Proxy.Queqiao";
+option go_package = "github.com/xtls/xray-core/proxy/queqiao";
+option java_package = "com.xray.proxy.queqiao";
+option java_multiple_files = true;
+
+import "common/net/destination.proto";
+
+message Device {
+  string device_id = 1;
+  string public_key = 2;
+}
+
+message Account {
+  string account_id = 1;
+  repeated Device devices = 2;
+}
+
+message ServerConfig {
+  string provider_id = 1;
+  string gateway_id = 2;
+  bool allow_private = 3;
+  repeated Account accounts = 4;
+  string root_pin = 5;
+  string root_certificate = 6;
+  string root_certificate_path = 7;
+  string certificate = 8;
+  string certificate_path = 9;
+  string private_key = 10;
+  string private_key_path = 11;
+  int32 hop_port_count = 12;
+  string congestion = 13;
+  int32 max_sessions = 14;
+  int32 flow_idle_timeout = 15;
+  string root_private_key = 16;
+  string root_private_key_path = 17;
+}
+
+message ClientConfig {
+  xray.common.net.Endpoint server = 1;
+  string provider_id = 2;
+  string gateway_id = 3;
+  string account_id = 4;
+  string device_id = 5;
+  string device_name = 6;
+  string sni = 7;
+  string root_pin = 8;
+  string root_certificate = 9;
+  string root_certificate_path = 10;
+  string device_certificate = 11;
+  string device_certificate_path = 12;
+  string device_private_key = 13;
+  string device_private_key_path = 14;
+  int32 hop_port_count = 15;
+  string congestion_controller = 16;
+  bool quic_pool = 17;
+  bool wait_for_open_ack = 18;
+  bool udp_over_stream = 19;
+  int32 tcp_fallback_lanes = 20;
+  int32 handshake_timeout = 21;
+  int32 flow_idle_timeout = 22;
+  int32 max_sessions = 23;
+  int32 chunk_size = 24;
+  string transport = 25;  // "auto", "quic", or "tcp"
+}
+
+message TransportConfig {
+  int32 hop_port_count = 1;
+  string congestion = 2;
+  int32 chunk_size = 3;
+  bool quic_pool = 4;
+  bool wait_for_open_ack = 5;
+  bool udp_over_stream = 6;
+  int32 handshake_timeout = 7;
+  int32 flow_idle_timeout = 8;
+  int32 max_sessions = 9;
+  int32 tcp_fallback_lanes = 10;
+  string transport = 11;
+}

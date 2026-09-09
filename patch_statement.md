@@ -284,3 +284,28 @@ When updating upstream REALITY or merging newer changes:
     - Updated `monitor()` and `cleanup()` with 5-minute hard drain timeouts to reclaim stuck retired sessions without resource leakage.
   - **Unit Tests (`common/mux/client_test.go` & `infra/conf/xray_test.go`)**: Added test coverage verifying worker retirement on request limits, reusable seconds, and picker rollover.
 
+---
+
+### 17. Queqiao Transport & Inbound/Outbound Protocol Integration (Client, Server & CLI) (September 2026)
+- **Status:** **Implemented & Verified**
+- **Changes:**
+  - **Inbound Handler (`proxy/queqiao/inbound/inbound.go`)**:
+    - Implemented server handler implementing `core.InboundHandler`, `core.Initializable`, and `protocol.UserManager`.
+    - Dynamic user tracking via `AddUser`, `RemoveUser`, `GetUser`, and `GetUsersCount` with thread-safe `sync.Map`.
+    - Extracted TLS certificates, private keys, and hop port counts from `streamSettings.SecuritySettings.(*xtls.Config)` and `streamSettings.ProtocolSettings.(*queqiao.TransportConfig)`, with fallback to inbound root config.
+    - Zero-copy stream adaptation linking `libqueqiao.Server` directly to Xray's `dispatcher.DispatchLink`.
+    - Panic-safe UDP destination handling: type-assertion fast path for `*net.UDPAddr` and fallback `xnet.ParseDestination`.
+  - **Outbound Handler (`proxy/queqiao/outbound/outbound.go`)**:
+    - Implemented client outbound handler implementing `core.OutboundHandler`.
+    - Zero-copy stream adaptation via `BufferedReader`/`BufferedWriter` piped directly to `client.Pipe`.
+    - Zero-DNS-leak UDP forwarding: wraps domain destinations in `domainUDPAddr` for remote egress resolution on the Queqiao gateway.
+    - Goroutine leak prevention via `done` channel synchronization ensuring clean socket closure.
+  - **Configuration Schema & StreamSettings (`infra/conf/queqiao.go` & `infra/conf/transport_internet.go`)**:
+    - Implemented `QueqiaoServerConfig`, `QueqiaoClientConfig`, and `QueqiaoConfig` (transport settings).
+    - Registered `queqiaoSettings` under `StreamConfig` and wired `Build()` into `internet.TransportConfig`.
+    - Added nil-pointer protection on `c.Address` in `QueqiaoClientConfig.Build()`.
+  - **CLI Key Generation & Path Diagnostics (`main/commands/all/queqiao.go`)**:
+    - Implemented `xray queqiao` matching `xray x25519` key-value output format.
+    - Implemented `xray queqiao doctor` subcommand wrapping `configgen.RunDoctorCLI`.
+  - **Unit Testing (`infra/conf/queqiao_test.go` & `main/commands/all/queqiao_test.go`)**:
+    - Validated configuration schema unmarshaling and CLI output formatting.
