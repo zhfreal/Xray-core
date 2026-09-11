@@ -5,10 +5,11 @@ This document details the modifications applied to the custom `Xray-core` codeba
 ---
 
 ## Repository Details
-* **Base Upstream Version**: Tag `v26.7.28`
+* **Base Upstream Version**: Tag `v26.9.9` (commit `52a412d9`)
 * **Fork Repository**: `github.com/zhfreal/Xray-core`
 * **Development Branch**: `xray-wildcard-patches`
-* **Latest Local Patch Commit**: `09bb7f1c`
+* **Rebase Working Branch**: `xray-wildcard-patches-v26.9.9`
+* **REALITY Fork Dependency**: `github.com/zhfreal/REALITY` branch `reality-wildcard-patches` (tag `v1.26.9+patch1`)
 
 ---
 
@@ -309,3 +310,23 @@ When updating upstream REALITY or merging newer changes:
     - Implemented `xray queqiao doctor` subcommand wrapping `configgen.RunDoctorCLI`.
   - **Unit Testing (`infra/conf/queqiao_test.go` & `main/commands/all/queqiao_test.go`)**:
     - Validated configuration schema unmarshaling and CLI output formatting.
+
+### 18. Upstream v26.9.9 Upgrade & Permissive REALITY Post-Quantum Fallback (September 2026)
+- **Status:** **Implemented & Verified**
+- **Upstream Release Base**: `v26.9.9` (commit `52a412d9`), specifying `go 1.27` toolchain.
+- **Key Technical Reconciliations**:
+  - **Permissive ML-KEM Fallback (`reality-mine/tls.go`)**:
+    - Upstream commit `8cdf7bf` strictly rejected any ClientHello lacking `X25519MLKEM768`.
+    - Patched key share loop to support both post-quantum `X25519MLKEM768` and classical `X25519` key shares, falling back cleanly to classical `X25519` when post-quantum is omitted. Third-party clients (Mihomo, Sing-box, mobile presets `ios`, `edge`, `qq`) connect successfully without rejection.
+    - Preserved 17 KiB buffer expansion (`size = 17 * 1024`) from commit `393f8de`.
+    - Preserved wildcard SNI matching (`config.MatchServerName`) and 100ms polling with 10-iteration ceiling on post-handshake record detection.
+  - **SplitHTTP Race & Concurrency Alignment (`splithttp/client.go` & `splithttp/dialer.go`)**:
+    - Reconciled upstream atomic `WaitReadCloser` (`atomic.Pointer[io.ReadCloser]` + `done.Instance`) with our `DefaultDialerClient.Close()` idle connection cleanup (`tr.CloseIdleConnections()`).
+    - Adopted upstream's buffer length caching in `uploadWriter.Write()`.
+  - **Protobuf & Multiplexing Compatibility (`app/proxyman/config.proto` & `config.pb.go`)**:
+    - Reconciled upstream's `reserved 3;` in `SenderConfig` with our custom fields 5–15 in `MultiplexingConfig`.
+  - **Verification**:
+    - Restored `ios`, `edge`, `qq` in `testing/scenarios/vless_test.go` and verified 100% pass across all 6 uTLS fingerprints (`safari`, `chrome`, `firefox`, `ios`, `edge`, `qq`).
+    - Validated Queqiao, sing-mux, burst observatory, and SplitHTTP test suites.
+    - Verified binary builds (`./xray version` reporting `Xray 26.9.9 ... 9a76b69 (go1.27.1 linux/amd64)`) and local server configuration validation.
+
