@@ -75,6 +75,18 @@ func New(ctx context.Context, config *queqiao.ClientConfig) (*Handler, error) {
 			if config.Transport == "" && tc.Transport != "" {
 				config.Transport = tc.Transport
 			}
+			if config.FallbackDelay == 0 && tc.FallbackDelay > 0 {
+				config.FallbackDelay = tc.FallbackDelay
+			}
+			if config.FallbackGrace == 0 && tc.FallbackGrace > 0 {
+				config.FallbackGrace = tc.FallbackGrace
+			}
+			if config.UdpCooldown == 0 && tc.UdpCooldown > 0 {
+				config.UdpCooldown = tc.UdpCooldown
+			}
+			if config.UdpFailureThreshold == 0 && tc.UdpFailureThreshold > 0 {
+				config.UdpFailureThreshold = tc.UdpFailureThreshold
+			}
 		}
 		if tlsConfig, ok := memStream.SecuritySettings.(*xtls.Config); ok && tlsConfig != nil {
 			if config.Sni == "" && tlsConfig.ServerName != "" {
@@ -123,27 +135,46 @@ func New(ctx context.Context, config *queqiao.ClientConfig) (*Handler, error) {
 	h := &Handler{
 		config: config,
 	}
+
+	fallbackDelay := time.Duration(config.FallbackDelay) * time.Millisecond
+	if fallbackDelay <= 0 {
+		if config.HandshakeTimeout > 0 {
+			derived := time.Duration(config.HandshakeTimeout) * time.Millisecond / 5
+			if derived >= 500*time.Millisecond && derived <= 2000*time.Millisecond {
+				fallbackDelay = derived
+			}
+		}
+		if fallbackDelay <= 0 {
+			fallbackDelay = 1000 * time.Millisecond
+		}
+	}
+
 	client, err := libqueqiao.NewClient(libqueqiao.ClientConfig{
-		ServerAddr:       serverAddr,
-		ProviderID:       config.ProviderId,
-		GatewayID:        config.GatewayId,
-		AccountID:        config.AccountId,
-		DeviceID:         config.DeviceId,
-		SNI:              config.Sni,
-		RootPin:          config.RootPin,
-		RootCert:         rootCert,
-		DeviceCert:       devCert,
-		DeviceKey:        devKey,
-		HopCount:         config.HopPortCount,
-		Congestion:       config.CongestionController,
-		QuicPool:         config.QuicPool,
-		WaitForOpenAck:   config.WaitForOpenAck,
-		UDPOverStream:    config.UdpOverStream,
-		TCPFallbackLanes: int(config.TcpFallbackLanes),
-		HandshakeTimeout: time.Duration(config.HandshakeTimeout) * time.Millisecond,
-		IdleTimeout:      time.Duration(config.FlowIdleTimeout) * time.Millisecond,
-		MaxSessions:      int(config.MaxSessions),
-		ChunkSize:        int(config.ChunkSize),
+		ServerAddr:          serverAddr,
+		ProviderID:          config.ProviderId,
+		GatewayID:           config.GatewayId,
+		AccountID:           config.AccountId,
+		DeviceID:            config.DeviceId,
+		SNI:                 config.Sni,
+		RootPin:             config.RootPin,
+		RootCert:            rootCert,
+		DeviceCert:          devCert,
+		DeviceKey:           devKey,
+		HopCount:            config.HopPortCount,
+		Congestion:          config.CongestionController,
+		QuicPool:            config.QuicPool,
+		WaitForOpenAck:      config.WaitForOpenAck,
+		UDPOverStream:       config.UdpOverStream,
+		TCPFallbackLanes:    int(config.TcpFallbackLanes),
+		HandshakeTimeout:    time.Duration(config.HandshakeTimeout) * time.Millisecond,
+		IdleTimeout:         time.Duration(config.FlowIdleTimeout) * time.Millisecond,
+		MaxSessions:         int(config.MaxSessions),
+		ChunkSize:           int(config.ChunkSize),
+		Transport:           config.Transport,
+		FallbackDelay:       fallbackDelay,
+		FallbackGrace:       time.Duration(config.FallbackGrace) * time.Millisecond,
+		UDPCooldown:         time.Duration(config.UdpCooldown) * time.Millisecond,
+		UDPFailureThreshold: int(config.UdpFailureThreshold),
 		DialContextFunc: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			dest, err := xnet.ParseDestination(network + ":" + addr)
 			if err != nil {

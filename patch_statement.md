@@ -323,10 +323,18 @@ When updating upstream REALITY or merging newer changes:
   - **SplitHTTP Race & Concurrency Alignment (`splithttp/client.go` & `splithttp/dialer.go`)**:
     - Reconciled upstream atomic `WaitReadCloser` (`atomic.Pointer[io.ReadCloser]` + `done.Instance`) with our `DefaultDialerClient.Close()` idle connection cleanup (`tr.CloseIdleConnections()`).
     - Adopted upstream's buffer length caching in `uploadWriter.Write()`.
-  - **Protobuf & Multiplexing Compatibility (`app/proxyman/config.proto` & `config.pb.go`)**:
-    - Reconciled upstream's `reserved 3;` in `SenderConfig` with our custom fields 5–15 in `MultiplexingConfig`.
-  - **Verification**:
-    - Restored `ios`, `edge`, `qq` in `testing/scenarios/vless_test.go` and verified 100% pass across all 6 uTLS fingerprints (`safari`, `chrome`, `firefox`, `ios`, `edge`, `qq`).
-    - Validated Queqiao, sing-mux, burst observatory, and SplitHTTP test suites.
-    - Verified binary builds (`./xray version` reporting `Xray 26.9.9 ... 9a76b69 (go1.27.1 linux/amd64)`) and local server configuration validation.
-
+### 19. Queqiao Configurable Fallback Delay & WAN Adaptive Defaults (September 2026)
+- **Status:** **Implemented & Verified**
+- **Problem**:
+  - `libqueqiao`'s default `FallbackDelay` of 300ms was designed for local LAN/domestic networks. On international WAN cross-border routes where physical RTT is ~240ms, a QUIC TLS 1.3 handshake takes ~250–350ms, almost always exceeding 300ms. In `"transport": "auto"` mode, this triggered premature TCP fallback even when UDP/QUIC was fully functional.
+  - Furthermore, `FallbackDelay`, `FallbackGrace`, and UDP health parameters were previously hardcoded or unexposed in Xray outbound configuration.
+- **Solution**:
+  - **Protobuf Schema Extension (`proxy/queqiao/config.proto` & `config.pb.go`)**:
+    - Added `fallback_delay`, `fallback_grace`, `udp_cooldown`, and `udp_failure_threshold` to `ClientConfig` (fields 26–29) and `TransportConfig` (fields 12–15).
+  - **JSON Configuration Wiring (`infra/conf/queqiao.go`)**:
+    - Added JSON tags `fallbackDelay`, `fallbackGrace`, `udpCooldown`, `udpFailureThreshold` to `QueqiaoClientConfig` and `QueqiaoConfig`.
+  - **Adaptive WAN Defaulting (`proxy/queqiao/outbound/outbound.go`)**:
+    - Explicitly passes `FallbackDelay`, `FallbackGrace`, `UDPCooldown`, and `UDPFailureThreshold` to `libqueqiao.ClientConfig`.
+    - If `fallbackDelay <= 0` (unconfigured), dynamically scales from `HandshakeTimeout` (e.g. 20% of handshake timeout clamped between 500ms and 2000ms), or defaults to a WAN-robust **1000ms** (giving cross-border QUIC handshakes ample time before standby TCP is engaged).
+  - **Mihomo Alignment (`adapter/outbound/queqiao.go` in `mihomo-mine`)**:
+    - Added identical smart fallback delay calculation (`option.FallbackDelay <= 0` defaults to 1000ms or 20% of `HandshakeTimeout`) ensuring unified cross-client behavior.

@@ -64,6 +64,10 @@ message ClientConfig {
   int32 max_sessions = 23;
   int32 chunk_size = 24;
   string transport = 25;  // "auto", "quic", or "tcp"
+  int32 fallback_delay = 26;
+  int32 fallback_grace = 27;
+  int32 udp_cooldown = 28;
+  int32 udp_failure_threshold = 29;
 }
 
 message TransportConfig {
@@ -78,4 +82,8 @@ message TransportConfig {
   int32 max_sessions = 9;
   int32 tcp_fallback_lanes = 10;
   string transport = 11;
+  int32 fallback_delay = 12;
+  int32 fallback_grace = 13;
+  int32 udp_cooldown = 14;
+  int32 udp_failure_threshold = 15;
 }

@@ -114,6 +114,10 @@ type QueqiaoClientConfig struct {
 	MaxSessions           int32    `json:"maxSessions"`
 	ChunkSize             int32    `json:"chunkSize"`
 	Transport             string   `json:"transport"`
+	FallbackDelay         int32    `json:"fallbackDelay"`
+	FallbackGrace         int32    `json:"fallbackGrace"`
+	UdpCooldown           int32    `json:"udpCooldown"`
+	UdpFailureThreshold   int32    `json:"udpFailureThreshold"`
 }
 
 func (c *QueqiaoClientConfig) Build() (proto.Message, error) {
@@ -142,6 +146,10 @@ func (c *QueqiaoClientConfig) Build() (proto.Message, error) {
 		MaxSessions:           c.MaxSessions,
 		ChunkSize:             c.ChunkSize,
 		Transport:             c.Transport,
+		FallbackDelay:         c.FallbackDelay,
+		FallbackGrace:         c.FallbackGrace,
+		UdpCooldown:           c.UdpCooldown,
+		UdpFailureThreshold:   c.UdpFailureThreshold,
 	}
 	if c.Address != nil {
 		config.Server = &net.Endpoint{
@@ -154,31 +162,39 @@ func (c *QueqiaoClientConfig) Build() (proto.Message, error) {
 }
 
 type QueqiaoConfig struct {
-	HopPortCount     int32  `json:"hopPortCount"`
-	Congestion       string `json:"congestion"`
-	ChunkSize        int32  `json:"chunkSize"`
-	QuicPool         bool   `json:"quicPool"`
-	WaitForOpenAck   bool   `json:"waitForOpenAck"`
-	UdpOverStream    bool   `json:"udpOverStream"`
-	HandshakeTimeout int32  `json:"handshakeTimeout"`
-	FlowIdleTimeout  int32  `json:"flowIdleTimeout"`
-	MaxSessions      int32  `json:"maxSessions"`
-	TcpFallbackLanes int32  `json:"tcpFallbackLanes"`
-	Transport        string `json:"transport"`
+	HopPortCount        int32  `json:"hopPortCount"`
+	Congestion          string `json:"congestion"`
+	ChunkSize           int32  `json:"chunkSize"`
+	QuicPool            bool   `json:"quicPool"`
+	WaitForOpenAck      bool   `json:"waitForOpenAck"`
+	UdpOverStream       bool   `json:"udpOverStream"`
+	HandshakeTimeout    int32  `json:"handshakeTimeout"`
+	FlowIdleTimeout     int32  `json:"flowIdleTimeout"`
+	MaxSessions         int32  `json:"maxSessions"`
+	TcpFallbackLanes    int32  `json:"tcpFallbackLanes"`
+	Transport           string `json:"transport"`
+	FallbackDelay       int32  `json:"fallbackDelay"`
+	FallbackGrace       int32  `json:"fallbackGrace"`
+	UdpCooldown         int32  `json:"udpCooldown"`
+	UdpFailureThreshold int32  `json:"udpFailureThreshold"`
 }
 
 func (c *QueqiaoConfig) Build() (proto.Message, error) {
 	return &queqiao.TransportConfig{
-		HopPortCount:     c.HopPortCount,
-		Congestion:       c.Congestion,
-		ChunkSize:        c.ChunkSize,
-		QuicPool:         c.QuicPool,
-		WaitForOpenAck:   c.WaitForOpenAck,
-		UdpOverStream:    c.UdpOverStream,
-		HandshakeTimeout: c.HandshakeTimeout,
-		FlowIdleTimeout:  c.FlowIdleTimeout,
-		MaxSessions:      c.MaxSessions,
-		TcpFallbackLanes: c.TcpFallbackLanes,
-		Transport:        c.Transport,
+		HopPortCount:        c.HopPortCount,
+		Congestion:          c.Congestion,
+		ChunkSize:           c.ChunkSize,
+		QuicPool:            c.QuicPool,
+		WaitForOpenAck:      c.WaitForOpenAck,
+		UdpOverStream:       c.UdpOverStream,
+		HandshakeTimeout:    c.HandshakeTimeout,
+		FlowIdleTimeout:     c.FlowIdleTimeout,
+		MaxSessions:         c.MaxSessions,
+		TcpFallbackLanes:    c.TcpFallbackLanes,
+		Transport:           c.Transport,
+		FallbackDelay:       c.FallbackDelay,
+		FallbackGrace:       c.FallbackGrace,
+		UdpCooldown:         c.UdpCooldown,
+		UdpFailureThreshold: c.UdpFailureThreshold,
 	}, nil
 }

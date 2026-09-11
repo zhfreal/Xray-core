@@ -325,6 +325,10 @@ type ClientConfig struct {
 	MaxSessions           int32                  `protobuf:"varint,23,opt,name=max_sessions,json=maxSessions,proto3" json:"max_sessions,omitempty"`
 	ChunkSize             int32                  `protobuf:"varint,24,opt,name=chunk_size,json=chunkSize,proto3" json:"chunk_size,omitempty"`
 	Transport             string                 `protobuf:"bytes,25,opt,name=transport,proto3" json:"transport,omitempty"` // "auto", "quic", or "tcp"
+	FallbackDelay         int32                  `protobuf:"varint,26,opt,name=fallback_delay,json=fallbackDelay,proto3" json:"fallback_delay,omitempty"`
+	FallbackGrace         int32                  `protobuf:"varint,27,opt,name=fallback_grace,json=fallbackGrace,proto3" json:"fallback_grace,omitempty"`
+	UdpCooldown           int32                  `protobuf:"varint,28,opt,name=udp_cooldown,json=udpCooldown,proto3" json:"udp_cooldown,omitempty"`
+	UdpFailureThreshold   int32                  `protobuf:"varint,29,opt,name=udp_failure_threshold,json=udpFailureThreshold,proto3" json:"udp_failure_threshold,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -534,21 +538,53 @@ func (x *ClientConfig) GetTransport() string {
 	return ""
 }
 
+func (x *ClientConfig) GetFallbackDelay() int32 {
+	if x != nil {
+		return x.FallbackDelay
+	}
+	return 0
+}
+
+func (x *ClientConfig) GetFallbackGrace() int32 {
+	if x != nil {
+		return x.FallbackGrace
+	}
+	return 0
+}
+
+func (x *ClientConfig) GetUdpCooldown() int32 {
+	if x != nil {
+		return x.UdpCooldown
+	}
+	return 0
+}
+
+func (x *ClientConfig) GetUdpFailureThreshold() int32 {
+	if x != nil {
+		return x.UdpFailureThreshold
+	}
+	return 0
+}
+
 type TransportConfig struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	HopPortCount     int32                  `protobuf:"varint,1,opt,name=hop_port_count,json=hopPortCount,proto3" json:"hop_port_count,omitempty"`
-	Congestion       string                 `protobuf:"bytes,2,opt,name=congestion,proto3" json:"congestion,omitempty"`
-	ChunkSize        int32                  `protobuf:"varint,3,opt,name=chunk_size,json=chunkSize,proto3" json:"chunk_size,omitempty"`
-	QuicPool         bool                   `protobuf:"varint,4,opt,name=quic_pool,json=quicPool,proto3" json:"quic_pool,omitempty"`
-	WaitForOpenAck   bool                   `protobuf:"varint,5,opt,name=wait_for_open_ack,json=waitForOpenAck,proto3" json:"wait_for_open_ack,omitempty"`
-	UdpOverStream    bool                   `protobuf:"varint,6,opt,name=udp_over_stream,json=udpOverStream,proto3" json:"udp_over_stream,omitempty"`
-	HandshakeTimeout int32                  `protobuf:"varint,7,opt,name=handshake_timeout,json=handshakeTimeout,proto3" json:"handshake_timeout,omitempty"`
-	FlowIdleTimeout  int32                  `protobuf:"varint,8,opt,name=flow_idle_timeout,json=flowIdleTimeout,proto3" json:"flow_idle_timeout,omitempty"`
-	MaxSessions      int32                  `protobuf:"varint,9,opt,name=max_sessions,json=maxSessions,proto3" json:"max_sessions,omitempty"`
-	TcpFallbackLanes int32                  `protobuf:"varint,10,opt,name=tcp_fallback_lanes,json=tcpFallbackLanes,proto3" json:"tcp_fallback_lanes,omitempty"`
-	Transport        string                 `protobuf:"bytes,11,opt,name=transport,proto3" json:"transport,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	HopPortCount        int32                  `protobuf:"varint,1,opt,name=hop_port_count,json=hopPortCount,proto3" json:"hop_port_count,omitempty"`
+	Congestion          string                 `protobuf:"bytes,2,opt,name=congestion,proto3" json:"congestion,omitempty"`
+	ChunkSize           int32                  `protobuf:"varint,3,opt,name=chunk_size,json=chunkSize,proto3" json:"chunk_size,omitempty"`
+	QuicPool            bool                   `protobuf:"varint,4,opt,name=quic_pool,json=quicPool,proto3" json:"quic_pool,omitempty"`
+	WaitForOpenAck      bool                   `protobuf:"varint,5,opt,name=wait_for_open_ack,json=waitForOpenAck,proto3" json:"wait_for_open_ack,omitempty"`
+	UdpOverStream       bool                   `protobuf:"varint,6,opt,name=udp_over_stream,json=udpOverStream,proto3" json:"udp_over_stream,omitempty"`
+	HandshakeTimeout    int32                  `protobuf:"varint,7,opt,name=handshake_timeout,json=handshakeTimeout,proto3" json:"handshake_timeout,omitempty"`
+	FlowIdleTimeout     int32                  `protobuf:"varint,8,opt,name=flow_idle_timeout,json=flowIdleTimeout,proto3" json:"flow_idle_timeout,omitempty"`
+	MaxSessions         int32                  `protobuf:"varint,9,opt,name=max_sessions,json=maxSessions,proto3" json:"max_sessions,omitempty"`
+	TcpFallbackLanes    int32                  `protobuf:"varint,10,opt,name=tcp_fallback_lanes,json=tcpFallbackLanes,proto3" json:"tcp_fallback_lanes,omitempty"`
+	Transport           string                 `protobuf:"bytes,11,opt,name=transport,proto3" json:"transport,omitempty"`
+	FallbackDelay       int32                  `protobuf:"varint,12,opt,name=fallback_delay,json=fallbackDelay,proto3" json:"fallback_delay,omitempty"`
+	FallbackGrace       int32                  `protobuf:"varint,13,opt,name=fallback_grace,json=fallbackGrace,proto3" json:"fallback_grace,omitempty"`
+	UdpCooldown         int32                  `protobuf:"varint,14,opt,name=udp_cooldown,json=udpCooldown,proto3" json:"udp_cooldown,omitempty"`
+	UdpFailureThreshold int32                  `protobuf:"varint,15,opt,name=udp_failure_threshold,json=udpFailureThreshold,proto3" json:"udp_failure_threshold,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *TransportConfig) Reset() {
@@ -658,6 +694,34 @@ func (x *TransportConfig) GetTransport() string {
 	return ""
 }
 
+func (x *TransportConfig) GetFallbackDelay() int32 {
+	if x != nil {
+		return x.FallbackDelay
+	}
+	return 0
+}
+
+func (x *TransportConfig) GetFallbackGrace() int32 {
+	if x != nil {
+		return x.FallbackGrace
+	}
+	return 0
+}
+
+func (x *TransportConfig) GetUdpCooldown() int32 {
+	if x != nil {
+		return x.UdpCooldown
+	}
+	return 0
+}
+
+func (x *TransportConfig) GetUdpFailureThreshold() int32 {
+	if x != nil {
+		return x.UdpFailureThreshold
+	}
+	return 0
+}
+
 var File_proxy_queqiao_config_proto protoreflect.FileDescriptor
 
 const file_proxy_queqiao_config_proto_rawDesc = "" +
@@ -694,7 +758,7 @@ const file_proxy_queqiao_config_proto_rawDesc = "" +
 	"\fmax_sessions\x18\x0e \x01(\x05R\vmaxSessions\x12*\n" +
 	"\x11flow_idle_timeout\x18\x0f \x01(\x05R\x0fflowIdleTimeout\x12(\n" +
 	"\x10root_private_key\x18\x10 \x01(\tR\x0erootPrivateKey\x121\n" +
-	"\x15root_private_key_path\x18\x11 \x01(\tR\x12rootPrivateKeyPath\"\xe8\a\n" +
+	"\x15root_private_key_path\x18\x11 \x01(\tR\x12rootPrivateKeyPath\"\x8d\t\n" +
 	"\fClientConfig\x121\n" +
 	"\x06server\x18\x01 \x01(\v2\x19.xray.common.net.EndpointR\x06server\x12\x1f\n" +
 	"\vprovider_id\x18\x02 \x01(\tR\n" +
@@ -726,7 +790,11 @@ const file_proxy_queqiao_config_proto_rawDesc = "" +
 	"\fmax_sessions\x18\x17 \x01(\x05R\vmaxSessions\x12\x1d\n" +
 	"\n" +
 	"chunk_size\x18\x18 \x01(\x05R\tchunkSize\x12\x1c\n" +
-	"\ttransport\x18\x19 \x01(\tR\ttransport\"\xae\x03\n" +
+	"\ttransport\x18\x19 \x01(\tR\ttransport\x12%\n" +
+	"\x0efallback_delay\x18\x1a \x01(\x05R\rfallbackDelay\x12%\n" +
+	"\x0efallback_grace\x18\x1b \x01(\x05R\rfallbackGrace\x12!\n" +
+	"\fudp_cooldown\x18\x1c \x01(\x05R\vudpCooldown\x122\n" +
+	"\x15udp_failure_threshold\x18\x1d \x01(\x05R\x13udpFailureThreshold\"\xd3\x04\n" +
 	"\x0fTransportConfig\x12$\n" +
 	"\x0ehop_port_count\x18\x01 \x01(\x05R\fhopPortCount\x12\x1e\n" +
 	"\n" +
@@ -742,7 +810,11 @@ const file_proxy_queqiao_config_proto_rawDesc = "" +
 	"\fmax_sessions\x18\t \x01(\x05R\vmaxSessions\x12,\n" +
 	"\x12tcp_fallback_lanes\x18\n" +
 	" \x01(\x05R\x10tcpFallbackLanes\x12\x1c\n" +
-	"\ttransport\x18\v \x01(\tR\ttransportBX\n" +
+	"\ttransport\x18\v \x01(\tR\ttransport\x12%\n" +
+	"\x0efallback_delay\x18\f \x01(\x05R\rfallbackDelay\x12%\n" +
+	"\x0efallback_grace\x18\r \x01(\x05R\rfallbackGrace\x12!\n" +
+	"\fudp_cooldown\x18\x0e \x01(\x05R\vudpCooldown\x122\n" +
+	"\x15udp_failure_threshold\x18\x0f \x01(\x05R\x13udpFailureThresholdBX\n" +
 	"\x16com.xray.proxy.queqiaoP\x01Z'github.com/xtls/xray-core/proxy/queqiao\xaa\x02\x12Xray.Proxy.Queqiaob\x06proto3"
 
 var (
