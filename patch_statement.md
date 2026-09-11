@@ -338,3 +338,16 @@ When updating upstream REALITY or merging newer changes:
     - If `fallbackDelay <= 0` (unconfigured), dynamically scales from `HandshakeTimeout` (e.g. 20% of handshake timeout clamped between 500ms and 2000ms), or defaults to a WAN-robust **1000ms** (giving cross-border QUIC handshakes ample time before standby TCP is engaged).
   - **Mihomo Alignment (`adapter/outbound/queqiao.go` in `mihomo-mine`)**:
     - Added identical smart fallback delay calculation (`option.FallbackDelay <= 0` defaults to 1000ms or 20% of `HandshakeTimeout`) ensuring unified cross-client behavior.
+
+### 20. Queqiao Transport Dialer Registration & Outbound Fallback Reliability (September 2026)
+- **Status:** **Implemented & Verified**
+- **Problem**:
+  - In Style B configuration (`streamSettings.network = "queqiao"`), Xray's `internet.Dial` returned `queqiao dialer not registered` when TCP fallback lanes attempted to connect, because `"queqiao"` was defined in `StreamConfig` but lacked a registered transport dialer in the `transport/internet` subsystem.
+- **Solution**:
+  - **Transport Dialer Registration (`proxy/queqiao/outbound/outbound.go`)**:
+    - Registered `internet.RegisterTransportDialer("queqiao", DialQueqiao)` where `DialQueqiao` invokes `internet.DialSystem(ctx, dest, streamSettings.SocketSettings)` to establish standard underlying TCP connections with complete socket option support.
+  - **Graceful Dialer Fallback**:
+    - Enhanced `DialContextFunc` so that if `d.Dial(ctx, dest)` encounters any error, it gracefully falls back to `internet.DialSystem(ctx, dest, sockopt)` instead of aborting the TCP fallback lane.
+  - **Unit Testing (`proxy/queqiao/outbound/outbound_test.go`)**:
+    - Added `TestQueqiaoTransportDialerRegistration` confirming that `internet.Dial` with `ProtocolName: "queqiao"` successfully invokes the transport dialer.
+

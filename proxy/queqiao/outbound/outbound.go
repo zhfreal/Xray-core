@@ -16,6 +16,7 @@ import (
 	"github.com/xtls/xray-core/proxy/queqiao"
 	"github.com/xtls/xray-core/transport"
 	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/stat"
 	xtls "github.com/xtls/xray-core/transport/internet/tls"
 	libqueqiao "github.com/zhfreal/lib-queqiao"
 	"github.com/zhfreal/lib-queqiao/identity"
@@ -184,7 +185,9 @@ func New(ctx context.Context, config *queqiao.ClientConfig) (*Handler, error) {
 			d := h.dialer
 			h.dialerMu.RUnlock()
 			if d != nil {
-				return d.Dial(ctx, dest)
+				if conn, err := d.Dial(ctx, dest); err == nil {
+					return conn, nil
+				}
 			}
 			return internet.DialSystem(ctx, dest, sockopt)
 		},
@@ -327,8 +330,21 @@ func (h *Handler) Close() error {
 	return nil
 }
 
+func DialQueqiao(ctx context.Context, dest xnet.Destination, streamSettings *internet.MemoryStreamConfig) (stat.Connection, error) {
+	var sockopt *internet.SocketConfig
+	if streamSettings != nil {
+		sockopt = streamSettings.SocketSettings
+	}
+	conn, err := internet.DialSystem(ctx, dest, sockopt)
+	if err != nil {
+		return nil, err
+	}
+	return stat.Connection(conn), nil
+}
+
 func init() {
 	common.Must(common.RegisterConfig((*queqiao.ClientConfig)(nil), func(ctx context.Context, config interface{}) (interface{}, error) {
 		return New(ctx, config.(*queqiao.ClientConfig))
 	}))
+	common.Must(internet.RegisterTransportDialer("queqiao", DialQueqiao))
 }
