@@ -95,6 +95,8 @@ github.com/vishvananda/netns v0.0.5/go.mod h1:SpkAiCQRtJ6TvvxPnOSyH3BMl6unz3xZla
 github.com/wlynxg/anet v0.0.5 h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=
 github.com/wlynxg/anet v0.0.5/go.mod h1:eay5PRQr7fIVAMbTbchTnO9gG65Hg/uYGdc7mguHxoA=
 github.com/yuin/goldmark v1.4.1/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=
+github.com/zhfreal/REALITY v1.26.10-0.20260911055628-1990e180fe4d h1:p4taoa/icMcKzgBBBORnm5TS5e5pSsAXT5/4Rf09f80=
+github.com/zhfreal/REALITY v1.26.10-0.20260911055628-1990e180fe4d/go.mod h1:DsJblcWDGt76+FVqBVwbwRhxyyNJsGV48gJLch0OOWI=
 github.com/zhfreal/lib-queqiao v0.6.3-patch1 h1:oEZU2fnHREyLKBMtGgngSTXf9VogjRYF7znThTk1Qig=
 github.com/zhfreal/lib-queqiao v0.6.3-patch1/go.mod h1:E+OiaR26WhmxZtp7yPJy+fxCYC6pXngFpzMzHMfYspI=
 github.com/zhfreal/sing-mux v0.3.10-patch8 h1:ilbnElHuo26E2wfWckqFnzjwMiMiJ9bz0+FOTqP4T5s=

@@ -21,7 +21,7 @@ This document details the modifications applied to the custom `Xray-core` codeba
 ### 2. Dependency Routing to Remote GitHub Fork (`go.mod`)
 * Injected `replace` directives pointing `github.com/xtls/reality` and `github.com/metacubex/sing-mux` to their respective remote GitHub forks to compile our custom branches:
   ```go
-  replace github.com/xtls/reality => github.com/zhfreal/REALITY v1.26.6-0.20260816141302-f0d1b9ba263b
+  replace github.com/xtls/reality => github.com/zhfreal/REALITY v1.26.10-0.20260911055628-1990e180fe4d
   replace github.com/metacubex/sing-mux => github.com/zhfreal/sing-mux v0.3.10-patch8
   ```
 
