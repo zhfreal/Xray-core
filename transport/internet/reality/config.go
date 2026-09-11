@@ -5,6 +5,8 @@ import (
 	"io"
 	"net"
 	"os"
+	"runtime"
+	"sync"
 	"time"
 
 	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
@@ -31,7 +33,7 @@ func (c *Config) GetREALITYConfig() *reality.Config {
 		NextProtos:             nil, // should be nil
 		SessionTicketsDisabled: true,
 
-		KeyLogWriter: KeyLogWriterFromConfig(c),
+		KeyLogWriter:           nil, // Moved below to attach finalizer to config
 	}
 	if c.Mldsa65Seed != nil {
 		_, key := mldsa65.NewKeyFromSeed((*[32]byte)(c.Mldsa65Seed))
@@ -55,7 +57,82 @@ func (c *Config) GetREALITYConfig() *reality.Config {
 	for _, shortId := range c.ShortIds {
 		config.ShortIds[*(*[8]byte)(shortId)] = true
 	}
+	config.KeyLogWriter = KeyLogWriterFromConfig(c)
+	if w, ok := config.KeyLogWriter.(*keyLogWriterWrapper); ok {
+		runtime.SetFinalizer(config, func(cfg *reality.Config) {
+			w.release()
+		})
+	}
+	config.CompileServerNamePatterns()
 	return config
+}
+
+var (
+	globalKeyLogCacheMu sync.Mutex
+	globalKeyLogCache   = make(map[string]*keyLogWriterWrapper)
+)
+
+type keyLogWriterWrapper struct {
+	sync.Mutex
+	file     *os.File
+	refCount int
+	path     string
+}
+
+func (w *keyLogWriterWrapper) Write(p []byte) (n int, err error) {
+	w.Lock()
+	defer w.Unlock()
+	if w.file == nil {
+		return 0, os.ErrClosed
+	}
+	return w.file.Write(p)
+}
+
+func (w *keyLogWriterWrapper) addRef() {
+	w.Lock()
+	w.refCount++
+	w.Unlock()
+}
+
+func (w *keyLogWriterWrapper) release() {
+	globalKeyLogCacheMu.Lock()
+	defer globalKeyLogCacheMu.Unlock()
+	w.Lock()
+	w.refCount--
+	shouldClose := w.refCount <= 0
+	if shouldClose {
+		if w.file != nil {
+			w.file.Close()
+			w.file = nil
+		}
+		if globalKeyLogCache[w.path] == w {
+			delete(globalKeyLogCache, w.path)
+		}
+	}
+	w.Unlock()
+}
+
+func getKeyLogWriter(path string) (*keyLogWriterWrapper, error) {
+	globalKeyLogCacheMu.Lock()
+	defer globalKeyLogCacheMu.Unlock()
+
+	if w, ok := globalKeyLogCache[path]; ok {
+		w.addRef()
+		return w, nil
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, err
+	}
+
+	w := &keyLogWriterWrapper{
+		file:     file,
+		refCount: 1,
+		path:     path,
+	}
+	globalKeyLogCache[path] = w
+	return w, nil
 }
 
 func KeyLogWriterFromConfig(c *Config) io.Writer {
@@ -63,9 +140,10 @@ func KeyLogWriterFromConfig(c *Config) io.Writer {
 		return nil
 	}
 
-	writer, err := os.OpenFile(c.MasterKeyLog, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
+	writer, err := getKeyLogWriter(c.MasterKeyLog)
 	if err != nil {
 		errors.LogErrorInner(context.Background(), err, "failed to open ", c.MasterKeyLog, " as master key log")
+		return nil
 	}
 
 	return writer

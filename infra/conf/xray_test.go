@@ -255,6 +255,37 @@ func TestMuxConfig_Build(t *testing.T) {
 			XudpConcurrency: 0,
 			XudpProxyUDP443: "reject",
 		}},
+		{"sing-mux smux", `{"enabled": true, "protocol": "smux", "maxConnections": 4, "minStreams": 4, "maxStreams": 0, "padding": true, "brutal": false}`, &proxyman.MultiplexingConfig{
+			Enabled:         true,
+			Concurrency:     0,
+			XudpConcurrency: 0,
+			XudpProxyUDP443: "reject",
+			Protocol:        "smux",
+			MaxConnections:  4,
+			MinStreams:      4,
+			MaxStreams:      0,
+			Padding:         true,
+			Brutal:          false,
+		}},
+		{"sing-mux brutal", `{"enabled": true, "protocol": "yamux", "brutal": true, "brutalUp": "10 Mbps", "brutalDown": "20 Mbps"}`, &proxyman.MultiplexingConfig{
+			Enabled:         true,
+			Concurrency:     0,
+			XudpConcurrency: 0,
+			XudpProxyUDP443: "reject",
+			Protocol:        "yamux",
+			Brutal:          true,
+			BrutalUp:        "10 Mbps",
+			BrutalDown:      "20 Mbps",
+		}},
+		{"retirement ranges", `{"enabled": true, "cMaxReuseTimes": "10-20", "hMaxRequestTimes": 100, "hMaxReusableSecs": "30-60"}`, &proxyman.MultiplexingConfig{
+			Enabled:          true,
+			Concurrency:      0,
+			XudpConcurrency:  0,
+			XudpProxyUDP443:  "reject",
+			CMaxReuseTimes:   "10-20",
+			HMaxRequestTimes: "100",
+			HMaxReusableSecs: "30-60",
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

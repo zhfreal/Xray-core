@@ -49,6 +49,10 @@ func (c *Conn) HandshakeAddress() net.Address {
 	return net.ParseAddress(state.ServerName)
 }
 
+func (c *Conn) CloseWrite() error {
+	return c.Close()
+}
+
 func Server(c net.Conn, config *reality.Config) (net.Conn, error) {
 	realityConn, err := reality.Server(context.Background(), c, config)
 	return &Conn{Conn: realityConn}, err
@@ -158,13 +162,16 @@ func UClient(c net.Conn, config *Config, ctx context.Context, dest net.Destinati
 			ecdhe = uConn.HandshakeState.State13.KeyShareKeys.MlkemEcdhe
 		}
 		if ecdhe == nil {
+			errors.LogWarning(context.Background(), "REALITY: current fingerprint does not support TLS 1.3")
 			return nil, errors.New("Current fingerprint ", uConn.ClientHelloID.Client, uConn.ClientHelloID.Version, " does not support TLS 1.3, REALITY handshake cannot establish.")
 		}
 		uConn.AuthKey, _ = ecdhe.ECDH(publicKey)
 		if uConn.AuthKey == nil {
+			errors.LogWarning(context.Background(), "REALITY: SharedKey == nil")
 			return nil, errors.New("REALITY: SharedKey == nil")
 		}
 		if _, err := hkdf.New(sha256.New, uConn.AuthKey, hello.Random[:20], []byte("REALITY")).Read(uConn.AuthKey); err != nil {
+			errors.LogWarningInner(context.Background(), err, "REALITY: hkdf error")
 			return nil, err
 		}
 		aead := crypto.NewAesGcm(uConn.AuthKey)

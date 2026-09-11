@@ -218,6 +218,12 @@ func (i *ServerInstance) Handshake(conn net.Conn, fallback *[]byte) (*CommonConn
 				_, err = DecodeHeader(noises)
 			}
 			conn.Write(noises) // make client do new handshake
+			// Allow the client to read the noise bytes before we close the connection.
+			// Without this, Close() can trigger a TCP RST that discards the buffered
+			// noise data, causing the client to see a reset instead of the "do new
+			// handshake" signal — leading to a 5+ second reconnect delay in VLESS
+			// encryption session alive detection after server reboot.
+			time.Sleep(100 * time.Millisecond)
 			return nil, errors.New("expired ticket")
 		}
 		if _, loaded := s.NfsKeys.LoadOrStore([32]byte(nfsKey), true); loaded { // prevents bad client also

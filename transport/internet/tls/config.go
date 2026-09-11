@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -16,7 +17,6 @@ import (
 	"github.com/xtls/xray-core/common/errors"
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/ocsp"
-	"github.com/xtls/xray-core/common/platform/filesystem"
 	"github.com/xtls/xray-core/common/protocol/tls/cert"
 	"github.com/xtls/xray-core/transport/internet"
 )
@@ -45,89 +45,143 @@ func (c *Config) loadSelfCertPool() (*x509.CertPool, error) {
 	return root, nil
 }
 
+type cachedCertState struct {
+	sync.RWMutex
+	certs    []*tls.Certificate
+	caCerts  []*Certificate
+	refCount int
+	cancels  []func()
+}
+
+func (s *cachedCertState) addRef() {
+	s.Lock()
+	s.refCount++
+	s.Unlock()
+}
+
+func (s *cachedCertState) release() {
+	s.Lock()
+	s.refCount--
+	if s.refCount <= 0 {
+		for _, cancel := range s.cancels {
+			cancel()
+		}
+		s.cancels = nil
+	}
+	s.Unlock()
+}
+
+var (
+	configCertCacheSeq uint64
+	configCertCacheMu  sync.Mutex
+	configCertCache    = make(map[uint64]*cachedCertState)
+)
+
+func (c *Config) getCachedCertState() *cachedCertState {
+	configCertCacheMu.Lock()
+	if c.id == 0 {
+		configCertCacheSeq++
+		c.id = configCertCacheSeq
+	}
+	id := c.id
+
+	if val, ok := configCertCache[id]; ok {
+		configCertCacheMu.Unlock()
+		return val
+	}
+	state := &cachedCertState{refCount: 1}
+	configCertCache[id] = state
+	configCertCacheMu.Unlock()
+
+	runtime.SetFinalizer(c, func(cfg *Config) {
+		configCertCacheMu.Lock()
+		state := configCertCache[cfg.id]
+		delete(configCertCache, cfg.id)
+		configCertCacheMu.Unlock()
+
+		if state != nil {
+			state.release()
+		}
+	})
+
+	return state
+}
+
 // BuildCertificates builds a list of TLS certificates from proto definition.
 func (c *Config) BuildCertificates() []*tls.Certificate {
+	state := c.getCachedCertState()
+	state.Lock()
+	defer state.Unlock()
+
+	if len(state.certs) > 0 {
+		return state.certs
+	}
+
 	certs := make([]*tls.Certificate, 0, len(c.Certificate))
+	var validCertIndices []int
 	for _, entry := range c.Certificate {
 		if entry.Usage != Certificate_ENCIPHERMENT {
 			continue
 		}
-		getX509KeyPair := func() *tls.Certificate {
-			keyPair, err := tls.X509KeyPair(entry.Certificate, entry.Key)
-			if err != nil {
-				errors.LogWarningInner(context.Background(), err, "ignoring invalid X509 key pair")
-				return nil
-			}
-			keyPair.Leaf, err = x509.ParseCertificate(keyPair.Certificate[0])
-			if err != nil {
-				errors.LogWarningInner(context.Background(), err, "ignoring invalid certificate")
-				return nil
-			}
-			return &keyPair
-		}
-		if keyPair := getX509KeyPair(); keyPair != nil {
-			certs = append(certs, keyPair)
+
+		cacheKey := getCertCacheKey(entry)
+		var keyPair *tls.Certificate
+		if val, ok := globalCertCache.Load(cacheKey); ok {
+			keyPair = val.(*tls.Certificate)
 		} else {
+			keyPair = getX509KeyPair(entry.Certificate, entry.Key)
+			if keyPair != nil {
+				globalCertCache.Store(cacheKey, keyPair)
+			}
+		}
+
+		if keyPair != nil {
+			certs = append(certs, keyPair)
+			validCertIndices = append(validCertIndices, len(certs)-1)
+		} else {
+			validCertIndices = append(validCertIndices, -1)
+		}
+	}
+	state.certs = certs
+
+	// Refcount and setup callbacks
+	var validIdx int
+	for _, entry := range c.Certificate {
+		if entry.Usage != Certificate_ENCIPHERMENT {
 			continue
 		}
-		index := len(certs) - 1
-		setupOcspTicker(entry, func(isReloaded, isOcspstapling bool) {
-			cert := certs[index]
-			if isReloaded {
-				if newKeyPair := getX509KeyPair(); newKeyPair != nil {
-					cert = newKeyPair
-				} else {
-					return
-				}
+		certIndex := validCertIndices[validIdx]
+		validIdx++
+		if certIndex == -1 {
+			continue
+		}
+		cacheKey := getCertCacheKey(entry)
+		cancel := setupOcspTicker(entry, func(isReloaded, isOcspstapling bool, newCert *tls.Certificate) {
+			state.Lock()
+			defer state.Unlock()
+
+			if certIndex < 0 || certIndex >= len(state.certs) {
+				return
+			}
+			targetPair := state.certs[certIndex]
+
+			if isReloaded && newCert != nil {
+				targetPair = newCert
+				globalCertCache.Store(cacheKey, newCert)
 			}
 			if isOcspstapling {
-				if newOCSPData, err := ocsp.GetOCSPForCert(cert.Certificate); err != nil {
+				if newOCSPData, err := ocsp.GetOCSPForCert(targetPair.Certificate); err != nil {
 					errors.LogWarningInner(context.Background(), err, "ignoring invalid OCSP")
-				} else if string(newOCSPData) != string(cert.OCSPStaple) {
-					cert.OCSPStaple = newOCSPData
+				} else if string(newOCSPData) != string(targetPair.OCSPStaple) {
+					targetPair.OCSPStaple = newOCSPData
 				}
 			}
-			certs[index] = cert
+			state.certs[certIndex] = targetPair
 		})
+		state.cancels = append(state.cancels, cancel)
 	}
-	return certs
-}
 
-func setupOcspTicker(entry *Certificate, callback func(isReloaded, isOcspstapling bool)) {
-	go func() {
-		if entry.OneTimeLoading {
-			return
-		}
-		var isOcspstapling bool
-		hotReloadCertInterval := uint64(3600)
-		if entry.OcspStapling != 0 {
-			hotReloadCertInterval = entry.OcspStapling
-			isOcspstapling = true
-		}
-		t := time.NewTicker(time.Duration(hotReloadCertInterval) * time.Second)
-		for {
-			var isReloaded bool
-			if entry.CertificatePath != "" && entry.KeyPath != "" {
-				newCert, err := filesystem.ReadCert(entry.CertificatePath)
-				if err != nil {
-					errors.LogErrorInner(context.Background(), err, "failed to parse certificate")
-					return
-				}
-				newKey, err := filesystem.ReadCert(entry.KeyPath)
-				if err != nil {
-					errors.LogErrorInner(context.Background(), err, "failed to parse key")
-					return
-				}
-				if string(newCert) != string(entry.Certificate) || string(newKey) != string(entry.Key) {
-					entry.Certificate = newCert
-					entry.Key = newKey
-					isReloaded = true
-				}
-			}
-			callback(isReloaded, isOcspstapling)
-			<-t.C
-		}
-	}()
+	return state.certs
 }
 
 func isCertificateExpired(c *tls.Certificate) bool {
@@ -159,14 +213,24 @@ func issueCertificate(rawCA *Certificate, domain string) (*tls.Certificate, erro
 }
 
 func (c *Config) getCustomCA() []*Certificate {
+	state := c.getCachedCertState()
+	state.Lock()
+	defer state.Unlock()
+
+	if len(state.caCerts) > 0 {
+		return state.caCerts
+	}
+
 	certs := make([]*Certificate, 0, len(c.Certificate))
 	for _, certificate := range c.Certificate {
 		if certificate.Usage == Certificate_AUTHORITY_ISSUE {
 			certs = append(certs, certificate)
-			setupOcspTicker(certificate, func(isReloaded, isOcspstapling bool) {})
+			cancel := setupOcspTicker(certificate, func(isReloaded, isOcspstapling bool, cert *tls.Certificate) {})
+			state.cancels = append(state.cancels, cancel)
 		}
 	}
-	return certs
+	state.caCerts = certs
+	return state.caCerts
 }
 
 func getGetCertificateFunc(c *tls.Config, ca []*Certificate) func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
@@ -325,7 +389,7 @@ func (r *RandCarrier) verifyPeerCert(rawCerts [][]byte, verifiedChains [][]*x509
 			}
 		}
 		if verifyResult == foundCA {
-			errors.New("peer cert is invalid (against pinned CA and verifyPeerCertByName)")
+			return errors.New("peer cert is invalid (against pinned CA and verifyPeerCertByName)")
 		}
 		return errors.New("peer cert is invalid (against root CAs and verifyPeerCertByName)")
 	}
@@ -465,11 +529,16 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 	}
 
 	if len(c.MasterKeyLog) > 0 && c.MasterKeyLog != "none" {
-		writer, err := os.OpenFile(c.MasterKeyLog, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
+		writer, err := getKeyLogWriter(c.MasterKeyLog)
 		if err != nil {
 			errors.LogErrorInner(context.Background(), err, "failed to open ", c.MasterKeyLog, " as master key log")
 		} else {
 			config.KeyLogWriter = writer
+			runtime.SetFinalizer(config, func(cfg *tls.Config) {
+				if w, ok := cfg.KeyLogWriter.(*keyLogWriterWrapper); ok {
+					w.release()
+				}
+			})
 		}
 	}
 	if len(c.EchConfigList) > 0 || len(c.EchServerKeys) > 0 {
@@ -578,3 +647,72 @@ func verifyChain(certs []*x509.Certificate, pinnedPeerCertSha256 [][]byte) (veri
 	}
 	return certNotFound, nil
 }
+
+type keyLogWriterWrapper struct {
+	sync.Mutex
+	file     *os.File
+	refCount int
+	path     string
+}
+
+func (w *keyLogWriterWrapper) Write(p []byte) (n int, err error) {
+	w.Lock()
+	defer w.Unlock()
+	if w.file == nil {
+		return 0, os.ErrClosed
+	}
+	return w.file.Write(p)
+}
+
+func (w *keyLogWriterWrapper) addRef() {
+	w.Lock()
+	w.refCount++
+	w.Unlock()
+}
+
+func (w *keyLogWriterWrapper) release() {
+	globalKeyLogCacheMu.Lock()
+	defer globalKeyLogCacheMu.Unlock()
+	w.Lock()
+	w.refCount--
+	shouldClose := w.refCount <= 0
+	if shouldClose {
+		if w.file != nil {
+			w.file.Close()
+			w.file = nil
+		}
+		if globalKeyLogCache[w.path] == w {
+			delete(globalKeyLogCache, w.path)
+		}
+	}
+	w.Unlock()
+}
+
+var (
+	globalKeyLogCacheMu sync.Mutex
+	globalKeyLogCache   = make(map[string]*keyLogWriterWrapper)
+)
+
+func getKeyLogWriter(path string) (*keyLogWriterWrapper, error) {
+	globalKeyLogCacheMu.Lock()
+	defer globalKeyLogCacheMu.Unlock()
+
+	if w, ok := globalKeyLogCache[path]; ok {
+		w.addRef()
+		return w, nil
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, err
+	}
+
+	w := &keyLogWriterWrapper{
+		file:     file,
+		refCount: 1,
+		path:     path,
+	}
+	globalKeyLogCache[path] = w
+	return w, nil
+}
+

@@ -7,6 +7,7 @@ import (
 
 // MemoryStreamConfig is a parsed form of StreamConfig. It is used to reduce the number of Protobuf parses.
 type MemoryStreamConfig struct {
+	Id               uint64
 	Destination      *net.Destination
 	ProtocolName     string
 	ProtocolSettings interface{}

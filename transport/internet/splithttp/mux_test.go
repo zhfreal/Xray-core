@@ -2,6 +2,7 @@ package splithttp_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	. "github.com/xtls/xray-core/transport/internet/splithttp"
@@ -18,7 +19,7 @@ func TestMaxConnections(t *testing.T) {
 		MaxConnections: &RangeConfig{From: 4, To: 4},
 	}
 
-	xmuxManager := NewXmuxManager(xmuxConfig, func() XmuxConn {
+	xmuxManager := NewXmuxManager(&xmuxConfig, func() XmuxConn {
 		return &fakeRoundTripper{}
 	})
 
@@ -37,7 +38,7 @@ func TestCMaxReuseTimes(t *testing.T) {
 		CMaxReuseTimes: &RangeConfig{From: 2, To: 2},
 	}
 
-	xmuxManager := NewXmuxManager(xmuxConfig, func() XmuxConn {
+	xmuxManager := NewXmuxManager(&xmuxConfig, func() XmuxConn {
 		return &fakeRoundTripper{}
 	})
 
@@ -56,7 +57,7 @@ func TestMaxConcurrency(t *testing.T) {
 		MaxConcurrency: &RangeConfig{From: 2, To: 2},
 	}
 
-	xmuxManager := NewXmuxManager(xmuxConfig, func() XmuxConn {
+	xmuxManager := NewXmuxManager(&xmuxConfig, func() XmuxConn {
 		return &fakeRoundTripper{}
 	})
 
@@ -75,7 +76,7 @@ func TestMaxConcurrency(t *testing.T) {
 func TestDefault(t *testing.T) {
 	xmuxConfig := XmuxConfig{}
 
-	xmuxManager := NewXmuxManager(xmuxConfig, func() XmuxConn {
+	xmuxManager := NewXmuxManager(&xmuxConfig, func() XmuxConn {
 		return &fakeRoundTripper{}
 	})
 
@@ -90,3 +91,33 @@ func TestDefault(t *testing.T) {
 		t.Error("did not get 1 distinct clients, got ", len(xmuxClients))
 	}
 }
+
+func TestGetXmuxClientConcurrency(t *testing.T) {
+	xmuxConfig := XmuxConfig{
+		MaxConcurrency: &RangeConfig{From: 2, To: 2},
+	}
+
+	xmuxManager := NewXmuxManager(&xmuxConfig, func() XmuxConn {
+		return &fakeRoundTripper{}
+	})
+
+	const numGoroutines = 50
+	const numIterations = 100
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+			for j := 0; j < numIterations; j++ {
+				xmuxClient := xmuxManager.GetXmuxClient(context.Background())
+				xmuxClient.AddRunning()
+				xmuxClient.Running.Add(-1)
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+

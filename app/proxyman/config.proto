@@ -72,4 +72,17 @@ message MultiplexingConfig {
   int32 xudpConcurrency = 3;
   // "reject" (default), "allow" or "skip".
   string xudpProxyUDP443 = 4;
+
+  // sing-mux fields
+  string protocol = 5;
+  int32 max_connections = 6;
+  int32 min_streams = 7;
+  int32 max_streams = 8;
+  bool padding = 9;
+  bool brutal = 10;
+  string brutal_up = 11;
+  string brutal_down = 12;
+  string c_max_reuse_times = 13;
+  string h_max_request_times = 14;
+  string h_max_reusable_secs = 15;
 }

@@ -33,6 +33,7 @@ var (
 		"wireguard":     func() interface{} { return &WireGuardConfig{IsClient: false} },
 		"hysteria":      func() interface{} { return new(HysteriaServerConfig) },
 		"tun":           func() interface{} { return new(TunConfig) },
+		"queqiao":       func() interface{} { return new(QueqiaoServerConfig) },
 	}, "protocol", "settings")
 
 	outboundConfigLoader = NewJSONConfigLoader(ConfigCreatorCache{
@@ -50,6 +51,7 @@ var (
 		"hysteria":    func() interface{} { return new(HysteriaClientConfig) },
 		"dns":         func() interface{} { return new(DNSOutboundConfig) },
 		"wireguard":   func() interface{} { return &WireGuardConfig{IsClient: true} },
+		"queqiao":     func() interface{} { return new(QueqiaoClientConfig) },
 	}, "protocol", "settings")
 )
 
@@ -105,6 +107,17 @@ type MuxConfig struct {
 	Concurrency     int16  `json:"concurrency"`
 	XudpConcurrency int16  `json:"xudpConcurrency"`
 	XudpProxyUDP443 string `json:"xudpProxyUDP443"`
+	Protocol        string `json:"protocol"`
+	MaxConnections  int    `json:"maxConnections"`
+	MinStreams      int    `json:"minStreams"`
+	MaxStreams      int    `json:"maxStreams"`
+	Padding         bool   `json:"padding"`
+	Brutal          bool   `json:"brutal"`
+	BrutalUp        string      `json:"brutalUp"`
+	BrutalDown      string      `json:"brutalDown"`
+	CMaxReuseTimes   *Int32Range `json:"cMaxReuseTimes"`
+	HMaxRequestTimes *Int32Range `json:"hMaxRequestTimes"`
+	HMaxReusableSecs *Int32Range `json:"hMaxReusableSecs"`
 }
 
 // Build creates MultiplexingConfig, Concurrency < 0 completely disables mux.
@@ -116,11 +129,34 @@ func (m *MuxConfig) Build() (*proxyman.MultiplexingConfig, error) {
 	default:
 		return nil, errors.New(`unknown "xudpProxyUDP443": `, m.XudpProxyUDP443)
 	}
+	var cMaxReuseTimes string
+	if m.CMaxReuseTimes != nil {
+		cMaxReuseTimes = m.CMaxReuseTimes.String()
+	}
+	var hMaxRequestTimes string
+	if m.HMaxRequestTimes != nil {
+		hMaxRequestTimes = m.HMaxRequestTimes.String()
+	}
+	var hMaxReusableSecs string
+	if m.HMaxReusableSecs != nil {
+		hMaxReusableSecs = m.HMaxReusableSecs.String()
+	}
 	return &proxyman.MultiplexingConfig{
-		Enabled:         m.Enabled,
-		Concurrency:     int32(m.Concurrency),
-		XudpConcurrency: int32(m.XudpConcurrency),
-		XudpProxyUDP443: m.XudpProxyUDP443,
+		Enabled:          m.Enabled,
+		Concurrency:      int32(m.Concurrency),
+		XudpConcurrency:  int32(m.XudpConcurrency),
+		XudpProxyUDP443:  m.XudpProxyUDP443,
+		Protocol:         m.Protocol,
+		MaxConnections:   int32(m.MaxConnections),
+		MinStreams:       int32(m.MinStreams),
+		MaxStreams:       int32(m.MaxStreams),
+		Padding:          m.Padding,
+		Brutal:           m.Brutal,
+		BrutalUp:         m.BrutalUp,
+		BrutalDown:       m.BrutalDown,
+		CMaxReuseTimes:   cMaxReuseTimes,
+		HMaxRequestTimes: hMaxRequestTimes,
+		HMaxReusableSecs: hMaxReusableSecs,
 	}, nil
 }
 
