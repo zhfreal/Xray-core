@@ -641,7 +641,7 @@ func TestVlessRealityFingerprints(t *testing.T) {
 		}
 		return nil
 	}
-	fingerPrints := []string{"chrome", "firefox", "safari"}
+	fingerPrints := []string{"chrome", "firefox", "safari", "ios", "edge", "qq"}
 	wg := sync.WaitGroup{}
 	wg.Add(len(fingerPrints))
 	for _, fp := range fingerPrints {
