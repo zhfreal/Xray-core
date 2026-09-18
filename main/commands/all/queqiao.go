@@ -4,7 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/xtls/xray-core/main/commands/base"
-	"github.com/zhfreal/lib-queqiao/configgen"
+	"github.com/zhfreal/queqiao/configgen"
 )
 
 var cmdQueqiao = &base.Command{

@@ -18,8 +18,8 @@ import (
 	"github.com/xtls/xray-core/transport/internet"
 	"github.com/xtls/xray-core/transport/internet/stat"
 	xtls "github.com/xtls/xray-core/transport/internet/tls"
-	libqueqiao "github.com/zhfreal/lib-queqiao"
-	"github.com/zhfreal/lib-queqiao/identity"
+	libqueqiao "github.com/zhfreal/queqiao"
+	"github.com/zhfreal/queqiao/identity"
 )
 
 type domainUDPAddr struct {

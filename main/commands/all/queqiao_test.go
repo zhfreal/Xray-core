@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zhfreal/lib-queqiao/configgen"
+	"github.com/zhfreal/queqiao/configgen"
 )
 
 func TestXrayQueqiaoFormat(t *testing.T) {

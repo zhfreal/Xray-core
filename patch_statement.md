@@ -244,7 +244,8 @@ proxies:
   - Implemented server handler implementing `core.InboundHandler`, `core.Initializable`, and `protocol.UserManager`.
   - Dynamic user tracking via `AddUser`, `RemoveUser`, `GetUser`, and `GetUsersCount` with thread-safe `sync.Map`.
   - Extracted TLS certificates, private keys, and hop port counts from `streamSettings.SecuritySettings.(*xtls.Config)` and `streamSettings.ProtocolSettings.(*queqiao.TransportConfig)`, with fallback to inbound root config.
-  - Zero-copy stream adaptation linking `libqueqiao.Server` directly to Xray's `dispatcher.DispatchLink`.
+  - Zero-copy stream adaptation linking `queqiao.Server` (`github.com/zhfreal/queqiao`) directly to Xray's `dispatcher.DispatchLink`.
+  - Migrated Queqiao dependency from standalone `lib-queqiao` to unified `github.com/zhfreal/queqiao v0.6.3-patch2`.
   - Panic-safe UDP destination handling: type-assertion fast path for `*net.UDPAddr` and fallback `xnet.ParseDestination`.
 * **Outbound Handler (`proxy/queqiao/outbound/outbound.go`)**:
   - Implemented client outbound handler implementing `core.OutboundHandler`.

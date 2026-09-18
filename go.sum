@@ -97,8 +97,8 @@ github.com/wlynxg/anet v0.0.5/go.mod h1:eay5PRQr7fIVAMbTbchTnO9gG65Hg/uYGdc7mguH
 github.com/yuin/goldmark v1.4.1/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=
 github.com/zhfreal/REALITY v1.26.10-0.20260911055628-1990e180fe4d h1:p4taoa/icMcKzgBBBORnm5TS5e5pSsAXT5/4Rf09f80=
 github.com/zhfreal/REALITY v1.26.10-0.20260911055628-1990e180fe4d/go.mod h1:DsJblcWDGt76+FVqBVwbwRhxyyNJsGV48gJLch0OOWI=
-github.com/zhfreal/lib-queqiao v0.6.3-patch1 h1:oEZU2fnHREyLKBMtGgngSTXf9VogjRYF7znThTk1Qig=
-github.com/zhfreal/lib-queqiao v0.6.3-patch1/go.mod h1:E+OiaR26WhmxZtp7yPJy+fxCYC6pXngFpzMzHMfYspI=
+github.com/zhfreal/queqiao v0.6.3-patch2 h1:NkXpQflJ+P2xi81jUyD6s3DAwAu8q1D8ML72t9oPAvs=
+github.com/zhfreal/queqiao v0.6.3-patch2/go.mod h1:4+zj8UDK72ynpgsqaQKSEQJXIbWC/+EZ4u3nhk/cTAg=
 github.com/zhfreal/sing-mux v0.3.11-patch1 h1:Cyw2gGovBHljg2iQsDgVsqH44h2skUALCGi11C7Zllw=
 github.com/zhfreal/sing-mux v0.3.11-patch1/go.mod h1:8bT7ZKT3clRrJjYc/x5CRYibC1TX/bK73a3r3+2E+Fc=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
